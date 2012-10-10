@@ -299,34 +299,12 @@ let extra_rules () = begin
   mlp_cmo "tools/compat5b";
   end;
 
-  ocaml_lib ~extern:true ~dir:Coq_config.camlp4lib ~tag_name:"use_camlpX"
-    ~byte:true ~native:true (if use_camlp5 then "gramlib" else "camlp4lib");
-
-(** Special case of toplevel/mltop.ml4:
-    - mltop.ml will be the old mltop.optml and be used to obtain mltop.cmx
-    - we add a special mltop.ml4 --> mltop.cmo rule, before all the others
-*)
-  flag ["is_mltop"; "p4option"] flag_dynlink;
-
-(*TODO: this is rather ugly for a simple file, we should try to
-        benefit more from predefined rules *)
-  let mltop = "toplevel/mltop" in
-  let ml4 = mltop^".ml4" and mlo = mltop^".cmo" and
-      ml = mltop^".ml" and mld = mltop^".ml.depends"
-  in
-  rule "mltop_byte" ~deps:[ml4;mld]  ~prod:mlo ~insert:`top
-    (fun env build ->
-       Ocaml_compiler.prepare_compile build ml;
-       Cmd (S [!Options.ocamlc; A"-c"; A"-pp";
-	       Quote (S [camlp4o; T(tags_of_pathname ml4 ++ "p4mod");
-			 A"-DByte";A"-DHasDynlink";camlp4compat;A"-impl"]);
-	       A"-rectypes"; camlp4incl; incl ml4; A"-impl"; P ml4]));
-
-(** All caml files are compiled with -rectypes and +camlp4/5
+(** All caml files are compiled with +camlp4/5
     and ide files need +lablgtk2 *)
 
-  flag ["compile"; "ocaml"] (S [A"-rectypes"; camlp4incl]);
-  flag ["link"; "ocaml"] (S [A"-rectypes"; camlp4incl]);
+  flag ["compile"; "ocaml"; "rectypes" ] (A "-rectypes");
+  flag ["compile"; "ocaml"] camlp4incl;
+  flag ["link"; "ocaml"] camlp4incl;
   flag ["ocaml"; "ide"; "compile"] lablgtkincl;
   flag ["ocaml"; "ide"; "link"] lablgtkincl;
   flag ["ocaml"; "ide"; "link"; "byte"]

@@ -465,36 +465,6 @@ if [ "$coq_debug_flag" = "-g" ]; then
     esac
 fi
 
-# Native dynlink
-if [ "$natdynlink" = "yes" -a -f "$CAMLLIB"/dynlink.cmxa ]; then
-    HASNATDYNLINK=true
-else
-    HASNATDYNLINK=false
-fi
-
-case $HASNATDYNLINK,$ARCH,`uname -r`,$CAMLVERSION in
-    true,Darwin,9.*,3.11.*)  # ocaml 3.11.0 dynlink on MacOS 10.5 is buggy
-        NATDYNLINKFLAG=os5fixme;;
-    #Possibly a problem on 10.6.0/10.6.1/10.6.2
-    #May just be a 32 vs 64 problem for all 10.6.*
-    true,Darwin,10.0.*,3.11.*) # Possibly a problem on 10.6.0
-        NATDYNLINKFLAG=os5fixme;;
-    true,Darwin,10.1.*,3.11.*) # Possibly a problem on 10.6.1
-        NATDYNLINKFLAG=os5fixme;;
-    true,Darwin,10.2.*,3.11.*) # Possibly a problem on 10.6.2
-        NATDYNLINKFLAG=os5fixme;;
-    true,Darwin,10.*,3.11.*)
-        if [ `getconf LONG_BIT` = "32" ]; then
-	    # Still a problem for x86_32
-            NATDYNLINKFLAG=os5fixme
-        else
-	    # Not a problem for x86_64
-            NATDYNLINKFLAG=$HASNATDYNLINK
-        fi;;
-    *)
-        NATDYNLINKFLAG=$HASNATDYNLINK;;
-esac
-
 # Camlp4 / Camlp5 configuration
 
 # Assume that camlp(4|5) binaries are at the same place as ocaml ones
@@ -572,6 +542,13 @@ if [ "$best_compiler" = "opt" ] ; then
 	  best_compiler=byte
 	  echo "Cannot find native-code $CAMLP4,"
 	  echo "only the bytecode version of Coq will be available."
+      elif [ ! -f "$CAMLLIB"/dynlink.cmxa ]; then
+	  best_compiler=byte
+	  echo "Cannot find native-code dynlink library,"
+	  echo "only the bytecode version of Coq will be available."
+	  echo "For building a native-code Coq, you may try to first"
+          echo "compile and install a dummy dynlink.cmxa (see dev/dynlink.ml)"
+          echo "and then run ./configure -natdynlink no"
       else
           if [ "$CAMLOPTVERSION" != "$CAMLVERSION" ] ; then
 	      echo "Native and bytecode compilers do not have the same version!"
@@ -583,6 +560,36 @@ if [ "$best_compiler" = "opt" ] ; then
       echo "You have only bytecode compilation."
   fi
 fi
+
+# Native dynlink
+if [ "$natdynlink" = "yes" -a -f "$CAMLLIB"/dynlink.cmxa ]; then
+    HASNATDYNLINK=true
+else
+    HASNATDYNLINK=false
+fi
+
+case $HASNATDYNLINK,$ARCH,`uname -r`,$CAMLVERSION in
+    true,Darwin,9.*,3.11.*)  # ocaml 3.11.0 dynlink on MacOS 10.5 is buggy
+        NATDYNLINKFLAG=os5fixme;;
+    #Possibly a problem on 10.6.0/10.6.1/10.6.2
+    #May just be a 32 vs 64 problem for all 10.6.*
+    true,Darwin,10.0.*,3.11.*) # Possibly a problem on 10.6.0
+        NATDYNLINKFLAG=os5fixme;;
+    true,Darwin,10.1.*,3.11.*) # Possibly a problem on 10.6.1
+        NATDYNLINKFLAG=os5fixme;;
+    true,Darwin,10.2.*,3.11.*) # Possibly a problem on 10.6.2
+        NATDYNLINKFLAG=os5fixme;;
+    true,Darwin,10.*,3.11.*)
+        if [ `getconf LONG_BIT` = "32" ]; then
+	    # Still a problem for x86_32
+            NATDYNLINKFLAG=os5fixme
+        else
+	    # Not a problem for x86_64
+            NATDYNLINKFLAG=$HASNATDYNLINK
+        fi;;
+    *)
+        NATDYNLINKFLAG=$HASNATDYNLINK;;
+esac
 
 # OS dependent libraries
 
@@ -1030,17 +1037,8 @@ let localwwwrefman = "file:/" ^ docdir ^ "html/refman"
 
 END_OF_COQ_CONFIG
 
-# Subdirectories of theories/ added in coq_config.ml
-subdirs () {
-    (cd $1; find * \( -name .svn -prune \) -o \( -type d -exec printf "\"%s\";\n" {} \; \) ) >> "$mlconfig_file"
-}
-
-echo "let theories_dirs = [" >> "$mlconfig_file"
-subdirs theories
-echo "]" >> "$mlconfig_file"
-
 echo "let plugins_dirs = [" >> "$mlconfig_file"
-subdirs plugins
+find plugins/* \( -name .svn -prune \) -o \( -type d -exec printf "\"%s\";\n" {} \; \) >> "$mlconfig_file"
 echo "]" >> "$mlconfig_file"
 
 chmod a-w "$mlconfig_file"
@@ -1127,7 +1125,7 @@ CAMLLINK="$bytecamlc"
 CAMLOPTLINK="$nativecamlc"
 
 # Caml flags
-CAMLFLAGS=-rectypes $coq_annotate_flag
+CAMLFLAGS=$coq_annotate_flag
 TYPEREX=$coq_typerex_wrapper
 
 # Compilation debug flags
@@ -1198,5 +1196,5 @@ chmod a-w "$config_file"
 echo "If anything in the above is wrong, please restart './configure'."
 echo
 echo "*Warning* To compile the system for a new architecture"
-echo "          don't forget to do a 'make archclean' before './configure'."
+echo "          don't forget to do a 'make clean' before './configure'."
 

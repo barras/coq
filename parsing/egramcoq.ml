@@ -65,7 +65,7 @@ let make_constr_action
   (f : Loc.t -> constr_notation_substitution -> constr_expr) pil =
   let rec make (constrs,constrlists,binders as fullsubst) = function
   | [] ->
-      Gram.action (fun loc -> f loc fullsubst)
+      Gram.action (fun (loc:CompatLoc.t) -> f (!@loc) fullsubst)
   | (GramConstrTerminal _ | GramConstrNonTerminal (_,None)) :: tl ->
       (* parse a non-binding item *)
       Gram.action (fun _ -> make fullsubst tl)
@@ -113,7 +113,10 @@ let make_cases_pattern_action
   (f : Loc.t -> cases_pattern_notation_substitution -> cases_pattern_expr) pil =
   let rec make (env,envlist,hasbinders as fullenv) = function
   | [] ->
-      Gram.action (fun loc -> f loc (check_cases_pattern_env loc fullenv))
+      Gram.action
+	(fun (loc:CompatLoc.t) ->
+	  let loc = !@loc in
+	  f loc (check_cases_pattern_env loc fullenv))
   | (GramConstrTerminal _ | GramConstrNonTerminal (_,None)) :: tl ->
       (* parse a non-binding item *)
       Gram.action (fun _ -> make fullenv tl)
@@ -184,23 +187,43 @@ let extend_constr (entry,level) (n,assoc) mkact forpat rules =
   let symbs = make_constr_prod_item assoc n forpat pt in
   let pure_sublevels = pure_sublevels level symbs in
   let needed_levels = register_empty_levels forpat pure_sublevels in
+  let map_level (pos, ass1, name, ass2) =
+    (Option.map of_coq_position pos, Option.map of_coq_assoc ass1, name, ass2) in
+  let needed_levels = List.map map_level needed_levels in
   let pos,p4assoc,name,reinit = find_position forpat assoc level in
   let nb_decls = List.length needed_levels + 1 in
   List.iter (prepare_empty_levels forpat) needed_levels;
-  grammar_extend entry reinit (pos,[(name, p4assoc, [symbs, mkact pt])]);
+  grammar_extend entry reinit (Option.map of_coq_position pos,
+    [(name, Option.map of_coq_assoc p4assoc, [symbs, mkact pt])]);
   nb_decls) 0 rules
 
-let extend_constr_notation (n,assoc,ntn,rules) =
+type notation_grammar = {
+  notgram_level : int;
+  notgram_assoc : gram_assoc option;
+  notgram_notation : notation;
+  notgram_prods : grammar_constr_prod_item list list
+}
+
+let extend_constr_constr_notation ng =
+  let level = ng.notgram_level in
+  let mkact loc env = CNotation (loc, ng.notgram_notation, env) in
+  let e = interp_constr_entry_key false (ETConstr (level, ())) in
+  let ext = (ETConstr (level, ()), ng.notgram_assoc) in
+  extend_constr e ext (make_constr_action mkact) false ng.notgram_prods
+
+let extend_constr_pat_notation ng =
+  let level = ng.notgram_level in
+  let mkact loc env = CPatNotation (loc, ng.notgram_notation, env, []) in
+  let e = interp_constr_entry_key true (ETConstr (level, ())) in
+  let ext = ETConstr (level, ()), ng.notgram_assoc in
+  extend_constr e ext (make_cases_pattern_action mkact) true ng.notgram_prods
+
+let extend_constr_notation ng =
   (* Add the notation in constr *)
-  let mkact loc env = CNotation (loc,ntn,env) in
-  let e = interp_constr_entry_key false (ETConstr (n,())) in
-  let nb = extend_constr e (ETConstr(n,()),assoc) (make_constr_action mkact) false rules in
+  let nb = extend_constr_constr_notation ng in
   (* Add the notation in cases_pattern *)
-  let mkact loc env = CPatNotation (loc,ntn,env,[]) in
-  let e = interp_constr_entry_key true (ETConstr (n,())) in
-  let nb' = extend_constr e (ETConstr (n,()),assoc) (make_cases_pattern_action mkact)
-    true rules in
-  nb+nb'
+  let nb' = extend_constr_pat_notation ng in
+  nb + nb'
 
 (**********************************************************************)
 (** Grammar declaration for Tactic Notation (Coq level)               *)
@@ -211,46 +234,50 @@ let get_tactic_entry n =
   else if n = 5 then
     weaken_entry Tactic.binder_tactic, None
   else if 1<=n && n<5 then
-    weaken_entry Tactic.tactic_expr, Some (Compat.Level (string_of_int n))
+    weaken_entry Tactic.tactic_expr, Some (Extend.Level (string_of_int n))
   else
     error ("Invalid Tactic Notation level: "^(string_of_int n)^".")
-
-(* Declaration of the tactic grammar rule *)
-
-let head_is_ident = function GramTerminal _::_ -> true | _ -> false
-
-let add_tactic_entry (key,lev,prods,tac) =
-  let entry, pos = get_tactic_entry lev in
-  let rules =
-    if lev = 0 then begin
-      if not (head_is_ident prods) then
-	error "Notation for simple tactic must start with an identifier.";
-      let mkact s tac loc l =
-	(TacAlias(loc,s,l,tac):raw_atomic_tactic_expr) in
-      make_rule (mkact key tac) prods
-    end
-    else
-      let mkact s tac loc l =
-	(TacAtom(loc,TacAlias(loc,s,l,tac)):raw_tactic_expr) in
-      make_rule (mkact key tac) prods in
-  synchronize_level_positions ();
-  grammar_extend entry None (pos,[(None, None, List.rev [rules])]);
-  1
 
 (**********************************************************************)
 (** State of the grammar extensions                                   *)
 
-type notation_grammar =
-    int * gram_assoc option * notation * grammar_constr_prod_item list list
+type tactic_grammar = {
+  tacgram_key : string;
+  tacgram_level : int;
+  tacgram_prods : grammar_prod_item list;
+  tacgram_tactic : dir_path * Tacexpr.glob_tactic_expr;
+}
 
 type all_grammar_command =
   | Notation of
 	 (precedence * tolerability list) *
 	  notation_var_internalization_type list *
 	  notation_grammar
-  | TacticGrammar of
-      (string * int * grammar_prod_item list *
-         (dir_path * Tacexpr.glob_tactic_expr))
+  | TacticGrammar of tactic_grammar
+
+(* Declaration of the tactic grammar rule *)
+
+let head_is_ident tg = match tg.tacgram_prods with
+| GramTerminal _::_ -> true
+| _ -> false
+
+let add_tactic_entry tg =
+  let entry, pos = get_tactic_entry tg.tacgram_level in
+  let rules =
+    if tg.tacgram_level = 0 then begin
+      if not (head_is_ident tg) then
+        error "Notation for simple tactic must start with an identifier.";
+      let mkact loc l =
+        (TacAlias (loc,tg.tacgram_key,l,tg.tacgram_tactic):raw_atomic_tactic_expr) in
+      make_rule mkact tg.tacgram_prods
+    end
+    else
+      let mkact loc l =
+        (TacAtom(loc,TacAlias(loc,tg.tacgram_key,l,tg.tacgram_tactic)):raw_tactic_expr) in
+      make_rule mkact tg.tacgram_prods in
+  synchronize_level_positions ();
+  grammar_extend entry None (Option.map of_coq_position pos,[(None, None, List.rev [rules])]);
+  1
 
 let (grammar_state : (int * all_grammar_command) list ref) = ref []
 
@@ -262,8 +289,8 @@ let extend_grammar gram =
 
 let recover_notation_grammar ntn prec =
   let filter = function
-  | _, Notation (prec', vars, (_,_,ntn',_ as x)) when prec = prec' & ntn = ntn' ->
-    Some (vars, x)
+  | _, Notation (prec', vars, ng) when prec = prec' & ntn = ng.notgram_notation ->
+    Some (vars, ng)
   | _ -> None in
   let l = List.map_filter filter !grammar_state in
   assert (List.length l = 1);
@@ -272,9 +299,9 @@ let recover_notation_grammar ntn prec =
 (* Summary functions: the state of the lexer is included in that of the parser.
    Because the grammar affects the set of keywords when adding or removing
    grammar rules. *)
-type frozen_t = all_grammar_command list * Lexer.frozen_t
+type frozen_t = (int * all_grammar_command) list * Lexer.frozen_t
 
-let freeze () = (!grammar_state, Lexer.freeze ())
+let freeze () : frozen_t = (!grammar_state, Lexer.freeze ())
 
 (* We compare the current state of the grammar and the state to unfreeze,
    by computing the longest common suffixes *)

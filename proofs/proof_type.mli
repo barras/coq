@@ -22,10 +22,6 @@ open Misctypes
 (** This module defines the structure of proof tree and the tactic type. So, it
    is used by [Proof_tree] and [Refiner] *)
 
-type goal = Goal.goal
-
-type tactic = goal sigma -> goal list sigma
-
 type prim_rule =
   | Intro of identifier
   | Cut of bool * bool * identifier * types
@@ -40,6 +36,10 @@ type prim_rule =
   | Order of identifier list
   | Rename of identifier * identifier
   | Change_evars
+
+(** Nowadays, the only rules we'll consider are the primitive rules *)
+
+type rule = prim_rule
 
 (** The type [goal sigma] is the type of subgoal. It has the following form
 {v   it    = \{ evar_concl = [the conclusion of the subgoal]
@@ -66,64 +66,16 @@ type prim_rule =
                                               in the type of evar] \} \} \} v}
 *)
 
-(** {6 ... } *)
-(** Proof trees.
-  [ref] = [None] if the goal has still to be proved,
-  and [Some (r,l)] if the rule [r] was applied to the goal
-  and gave [l] as subproofs to be completed.
-  if [ref = (Some(Nested(Tactic t,p),l))] then [p] is the proof
-  that the goal can be proven if the goals in [l] are solved. *)
-type proof_tree = {
-  goal : goal;
-  ref : (rule * proof_tree list) option }
+type goal = Goal.goal
 
-and rule =
-  | Prim of prim_rule
-  | Nested of compound_rule * proof_tree
-  | Decl_proof of bool
-  | Daimon
+type tactic = goal sigma -> goal list sigma
 
-and compound_rule=
-  (** the boolean of Tactic tells if the default tactic is used *)
-  | Tactic of tactic_expr * bool
-
-and tactic_expr =
-  (constr,
-   constr_pattern,
-   evaluable_global_reference,
-   inductive,
-   ltac_constant,
-   identifier,
-   glob_tactic_expr,
-   tlevel)
-     Tacexpr.gen_tactic_expr
-
-and atomic_tactic_expr =
-  (constr,
-   constr_pattern,
-   evaluable_global_reference,
-   inductive,
-   ltac_constant,
-   identifier,
-   glob_tactic_expr,
-   tlevel)
-     Tacexpr.gen_atomic_tactic_expr
-
-and tactic_arg =
-  (constr,
-   constr_pattern,
-   evaluable_global_reference,
-   inductive,
-   ltac_constant,
-   identifier,
-   glob_tactic_expr,
-   tlevel)
-     Tacexpr.gen_tactic_arg
+(** Ltac traces *)
 
 type ltac_call_kind =
   | LtacNotationCall of string
   | LtacNameCall of ltac_constant
-  | LtacAtomCall of glob_atomic_tactic_expr * atomic_tactic_expr option ref
+  | LtacAtomCall of glob_atomic_tactic_expr
   | LtacVarCall of identifier * glob_tactic_expr
   | LtacConstrInterp of glob_constr *
       (extended_patvar_map * (identifier * identifier option) list)
@@ -131,5 +83,3 @@ type ltac_call_kind =
 type ltac_trace = (int * Loc.t * ltac_call_kind) list
 
 exception LtacLocated of (int * ltac_call_kind * ltac_trace * Loc.t) * exn
-
-val abstract_tactic_box : atomic_tactic_expr option ref ref

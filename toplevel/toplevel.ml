@@ -182,13 +182,6 @@ let print_location_in_file s inlibrary fname loc =
         (close_in ic;
          hov 1 (errstrm ++ spc() ++ str"(invalid location):") ++ fnl ())
 
-let print_command_location ib dloc =
-  match dloc with
-    | Some (bp,ep) ->
-        (str"Error during interpretation of command:" ++ fnl () ++
-           str(String.sub ib.str (bp-ib.start) (ep-bp)) ++ fnl ())
-    | None -> (mt ())
-
 let valid_loc dloc loc =
   loc <> Loc.ghost
   & match dloc with
@@ -291,6 +284,12 @@ let print_toplevel_error exc =
             (print_highlight_location top_buffer loc, ie)
           else
 	    ((mt ()) (* print_command_location top_buffer dloc *), ie)
+      | Compat.Exc_located (loc, ie) ->
+          let loc = Compat.to_coqloc loc in
+          if valid_buffer_loc top_buffer dloc loc then
+            (print_highlight_location top_buffer loc, ie)
+          else
+            ((mt ()) (* print_command_location top_buffer dloc *), ie)
       | Error_in_file (s, (inlibrary, fname, loc), ie) ->
           (print_location_in_file s inlibrary fname loc, ie)
       | _ ->

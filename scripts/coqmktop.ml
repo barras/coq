@@ -220,18 +220,7 @@ let tmp_dynlink()=
 let declare_loading_string () =
   if not !top then
     "Mltop.remove ();;"
-  else
-    "begin try\
-\n       (* Enable rectypes in the toplevel if it has the directive #rectypes *)\
-\n       begin match Hashtbl.find Toploop.directive_table \"rectypes\" with\
-\n         | Toploop.Directive_none f -> f ()\
-\n         | _ -> ()\
-\n       end\
-\n     with\
-\n       | Not_found -> ()\
-\n     end;;\
-\n\
-\n     let ppf = Format.std_formatter;;\
+  else "let ppf = Format.std_formatter;;\
 \n     Mltop.set_top\
 \n       {Mltop.load_obj=\
 \n         (fun f -> if not (Topdirs.load_file ppf f) then Errors.error (\"Could not load plugin \"^f));\
@@ -290,14 +279,16 @@ let main () =
       []
   in
   (* the list of the loaded modules *)
-  let main_file = Filename.quote (create_tmp_main_file modules) in
+  let main_file = create_tmp_main_file modules in
   try
     let args =
-      options @ (includes ()) @ copts @ tolink @ dynlink @ [ main_file ] in
-      (* add topstart.cmo explicitly because we shunted ocamlmktop wrapper *)
+      options @ (includes ()) @ copts @ tolink @ dynlink @
+	[ Filename.quote main_file ]
+    in
+    (* add topstart.cmo explicitly because we shunted ocamlmktop wrapper *)
     let args = if !top then args @ [ "topstart.cmo" ] else args in
       (* Now, with the .cma, we MUST use the -linkall option *)
-    let command = String.concat " " (prog::"-rectypes"::args) in
+    let command = String.concat " " (prog::args) in
       if !echo then
 	begin
 	  print_endline command;

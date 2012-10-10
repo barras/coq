@@ -102,8 +102,9 @@ let make_inv_predicate env sigma indf realargs id status concl =
               | None ->
 		let sort = get_sort_family_of env sigma concl in
 		let p = make_arity env true indf (new_sort_in_family sort) in
-		Unification.abstract_list_all env (Evd.create_evar_defs sigma)
-		  p concl (realargs@[mkVar id]) in
+		fst (Unification.abstract_list_all env
+                       (Evd.create_evar_defs sigma)
+		       p concl (realargs@[mkVar id])) in
 	  let hyps,bodypred = decompose_lam_n_assum (nrealargs+1) pred in
 	  (* We lift to make room for the equations *)
 	  (hyps,lift nrealargs bodypred)
@@ -197,7 +198,6 @@ let split_dep_and_nodep hyps gl =
     (fun (id,_,_ as d) (l1,l2) ->
        if var_occurs_in_pf gl id then (d::l1,l2) else (l1,d::l2))
     hyps ([],[])
-
 
 (* Computation of dids is late; must have been done in rewrite_equations*)
 (* Will keep generalizing and introducing back and forth... *)

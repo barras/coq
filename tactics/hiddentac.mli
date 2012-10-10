@@ -20,7 +20,7 @@ open Clenv
 open Termops
 open Misctypes
 
-(** Tactics for the interpreter. They left a trace in the proof tree
+(** Tactics for the interpreter. They used to left a trace in the proof tree
    when they are called. *)
 
 (** Basic tactics *)
@@ -46,17 +46,16 @@ val h_elim_type       : constr -> tactic
 val h_case            : evars_flag -> constr with_bindings -> tactic
 val h_case_type       : constr -> tactic
 
-val h_mutual_fix      : hidden_flag -> identifier -> int ->
+val h_mutual_fix      : identifier -> int ->
                         (identifier * int * constr) list -> tactic
 val h_fix             : identifier option -> int -> tactic
-val h_mutual_cofix    : hidden_flag -> identifier ->
-                        (identifier * constr) list -> tactic
+val h_mutual_cofix    : identifier -> (identifier * constr) list -> tactic
 val h_cofix           : identifier option -> tactic
 
 val h_cut             : constr -> tactic
 val h_generalize      : constr list -> tactic
 val h_generalize_gen  : (constr Locus.with_occurrences * name) list -> tactic
-val h_generalize_dep  : constr -> tactic
+val h_generalize_dep  : ?with_let:bool -> constr -> tactic
 val h_let_tac         : letin_flag -> name -> constr -> Locus.clause ->
                         intro_pattern_expr located option -> tactic
 val h_let_pat_tac     : letin_flag -> name -> evar_map * constr ->

@@ -6,28 +6,8 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-open Util
+open Pp
 
-type ('a,'b) t = ('a,'b list) Gmap.t
-
-let empty = Gmap.empty
-let mem = Gmap.mem
-let iter = Gmap.iter
-let map = Gmap.map
-let fold = Gmap.fold
-
-let add x y m =
-  try
-    let l = Gmap.find x m in
-    Gmap.add x (y::List.except y l) m
-  with Not_found ->
-    Gmap.add x [y] m
-
-let find x m =
-  try Gmap.find x m with Not_found -> []
-
-let remove x y m =
-  let l = Gmap.find x m in
-  Gmap.add x (if List.mem y l then List.subtract l [y] else l) m
-
+val pr_located : ('a -> std_ppcmds) -> 'a Loc.located -> std_ppcmds
+(** Prints an object surrounded by its commented location *)
 

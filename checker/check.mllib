@@ -1,6 +1,5 @@
 Coq_config
 Pp_control
-Compat
 Flags
 Pp
 Loc
@@ -13,6 +12,7 @@ CList
 CArray
 Util
 Option
+Hashset
 Hashcons
 CUnix
 System

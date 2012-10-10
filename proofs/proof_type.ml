@@ -11,9 +11,7 @@ open Evd
 open Names
 open Term
 open Tacexpr
-(* open Decl_expr *)
 open Glob_term
-open Genarg
 open Nametab
 open Pattern
 open Misctypes
@@ -21,6 +19,8 @@ open Misctypes
 
 (* This module defines the structure of proof tree and the tactic type. So, it
    is used by Proof_tree and Refiner *)
+
+(** Types of goals, tactics, rules ... *)
 
 type goal = Goal.goal
 
@@ -41,56 +41,16 @@ type prim_rule =
   | Rename of identifier * identifier
   | Change_evars
 
-type proof_tree = {
-  goal : goal;
-  ref : (rule * proof_tree list) option }
+(** Nowadays, the only rules we'll consider are the primitive rules *)
 
-and rule =
-  | Prim of prim_rule
-  | Nested of compound_rule * proof_tree
-  | Decl_proof of bool
-  | Daimon
+type rule = prim_rule
 
-and compound_rule=
-  | Tactic of tactic_expr * bool
-
-and tactic_expr =
-  (constr,
-   constr_pattern,
-   evaluable_global_reference,
-   inductive,
-   ltac_constant,
-   identifier,
-   glob_tactic_expr,
-   tlevel)
-     Tacexpr.gen_tactic_expr
-
-and atomic_tactic_expr =
-  (constr,
-   constr_pattern,
-   evaluable_global_reference,
-   inductive,
-   ltac_constant,
-   identifier,
-   glob_tactic_expr,
-   tlevel)
-     Tacexpr.gen_atomic_tactic_expr
-
-and tactic_arg =
-  (constr,
-   constr_pattern,
-   evaluable_global_reference,
-   inductive,
-   ltac_constant,
-   identifier,
-   glob_tactic_expr,
-   tlevel)
-     Tacexpr.gen_tactic_arg
+(** Ltac traces *)
 
 type ltac_call_kind =
   | LtacNotationCall of string
   | LtacNameCall of ltac_constant
-  | LtacAtomCall of glob_atomic_tactic_expr * atomic_tactic_expr option ref
+  | LtacAtomCall of glob_atomic_tactic_expr
   | LtacVarCall of identifier * glob_tactic_expr
   | LtacConstrInterp of glob_constr *
       (extended_patvar_map * (identifier * identifier option) list)
@@ -99,4 +59,3 @@ type ltac_trace = (int * Loc.t * ltac_call_kind) list
 
 exception LtacLocated of (int * ltac_call_kind * ltac_trace * Loc.t) * exn
 
-let abstract_tactic_box = ref (ref None)

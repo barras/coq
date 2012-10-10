@@ -453,6 +453,13 @@ let explain_cannot_find_well_typed_abstraction env p l =
   str "leads to a term" ++ spc () ++ pr_lconstr_env env p ++ spc () ++
   str "which is ill-typed."
 
+let explain_wrong_abstraction_type env na abs expected result =
+  let ppname = match na with Anonymous -> mt() | Name id -> pr_id id ++ spc() in
+  str "Cannot instantiate metavariable " ++ ppname ++ strbrk "of type " ++
+  pr_lconstr_env env expected ++ strbrk " with abstraction " ++
+  pr_lconstr_env env abs ++ strbrk " of incompatible type " ++ 
+  pr_lconstr_env env result ++ str "."
+
 let explain_abstraction_over_meta _ m n =
   strbrk "Too complex unification problem: cannot find a solution for both " ++
   pr_name m ++ spc () ++ str "and " ++ pr_name n ++ str "."
@@ -517,6 +524,7 @@ let explain_pretype_error env sigma err =
   | CannotUnifyBindingType (m,n) -> explain_cannot_unify_binding_type env m n
   | CannotFindWellTypedAbstraction (p,l) ->
       explain_cannot_find_well_typed_abstraction env p l
+  | WrongAbstractionType (n,a,t,u) -> explain_wrong_abstraction_type env n a t u
   | AbstractionOverMeta (m,n) -> explain_abstraction_over_meta env m n
   | NonLinearUnification (m,c) -> explain_non_linear_unification env m c
   | TypingError t -> explain_type_error env sigma t
@@ -988,11 +996,7 @@ let explain_reduction_tactic_error = function
 
 let explain_ltac_call_trace (nrep,last,trace,loc) =
   let calls =
-    (nrep,last) :: List.rev (List.map(fun(n,_,ck)->(n,ck))trace) in
-  let tacexpr_differ te te' =
-    (* NB: The following comparison may raise an exception
-       since a tacexpr may embed a functional part via a TacExtend *)
-    try te <> te' with Invalid_argument _ -> false
+    (nrep,last) :: List.rev (List.map(fun(n,_,ck)->(n,ck))trace)
   in
   let pr_call (n,ck) =
     (match ck with
@@ -1001,16 +1005,9 @@ let explain_ltac_call_trace (nrep,last,trace,loc) =
        | Proof_type.LtacVarCall (id,t) ->
 	   quote (Nameops.pr_id id) ++ strbrk " (bound to " ++
 	     Pptactic.pr_glob_tactic (Global.env()) t ++ str ")"
-       | Proof_type.LtacAtomCall (te,otac) -> quote
-	   (Pptactic.pr_glob_tactic (Global.env())
-	      (Tacexpr.TacAtom (Loc.ghost,te)))
-	   ++ (match !otac with
-		 | Some te' when tacexpr_differ (Obj.magic te') te ->
-		   strbrk " (expanded to " ++ quote
-		     (Pptactic.pr_tactic (Global.env())
-			(Tacexpr.TacAtom (Loc.ghost,te')))
-		   ++ str ")"
-		 | _ -> mt ())
+       | Proof_type.LtacAtomCall te ->
+	   quote (Pptactic.pr_glob_tactic (Global.env())
+		    (Tacexpr.TacAtom (Loc.ghost,te)))
        | Proof_type.LtacConstrInterp (c,(vars,unboundvars)) ->
 	   let filter =
 	     function (id,None) -> None | (id,Some id') -> Some(id,([],mkVar id')) in

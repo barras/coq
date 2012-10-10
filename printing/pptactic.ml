@@ -28,11 +28,17 @@ let pr_global x = Nametab.pr_global_env Idset.empty x
 
 type grammar_terminals = string option list
 
+type pp_tactic = {
+  pptac_key : string;
+  pptac_args : argument_type list;
+  pptac_prods : int * grammar_terminals;
+}
+
   (* Extensions *)
 let prtac_tab = Hashtbl.create 17
 
-let declare_extra_tactic_pprule (s,tags,prods) =
-  Hashtbl.add prtac_tab (s,tags) prods
+let declare_extra_tactic_pprule pt =
+  Hashtbl.add prtac_tab (pt.pptac_key, pt.pptac_args) (pt.pptac_prods)
 
 let exists_extra_tactic_pprule s tags = Hashtbl.mem prtac_tab (s,tags)
 
@@ -219,7 +225,6 @@ let rec pr_glob_generic prc prlc prtac prpat x =
   | ExtraArgType s ->
       try pi2 (Stringmap.find s !genarg_pprule) prc prlc prtac x
       with Not_found -> str "[no printer for " ++ str s ++ str "]"
-
 
 let rec pr_generic prc prlc prtac prpat x =
   match Genarg.genarg_tag x with
@@ -549,7 +554,6 @@ let linfo = 5
 
 let level_of (n,p) = match p with E -> n | L -> n-1 | Prec n -> n | Any -> lseq
 
-
 (** A printer for tactics that polymorphically works on the three
     "raw", "glob" and "typed" levels; in practice, the environment is
     used only at the glob and typed level: it is used to feed the
@@ -677,13 +681,11 @@ and pr_atom1 = function
       hov 1 (str (with_evars ev "case") ++ spc () ++ pr_with_bindings cb)
   | TacCaseType c -> hov 1 (str "casetype" ++ pr_constrarg c)
   | TacFix (ido,n) -> hov 1 (str "fix" ++ pr_opt pr_id ido ++ pr_intarg n)
-  | TacMutualFix (hidden,id,n,l) ->
-      if hidden then str "idtac" (* should caught before! *) else
+  | TacMutualFix (id,n,l) ->
       hov 1 (str "fix" ++ spc () ++ pr_id id ++ pr_intarg n ++ spc() ++
              str"with " ++ prlist_with_sep spc pr_fix_tac l)
   | TacCofix ido -> hov 1 (str "cofix" ++ pr_opt pr_id ido)
-  | TacMutualCofix (hidden,id,l) ->
-      if hidden then str "idtac" (* should be caught before! *) else
+  | TacMutualCofix (id,l) ->
       hov 1 (str "cofix" ++ spc () ++ pr_id id ++ spc() ++
              str"with " ++ prlist_with_sep spc pr_cofix_tac l)
   | TacCut c -> hov 1 (str "cut" ++ pr_constrarg c)
@@ -906,6 +908,9 @@ let rec pr_tac inherited tac =
   | TacProgress t ->
       hov 1 (str "progress" ++ spc () ++ pr_tac (ltactical,E) t),
       ltactical
+  | TacShowHyps t ->
+      hov 1 (str "infoH" ++ spc () ++ spc () ++ pr_tac (ltactical,E) t),
+      ltactical
   | TacInfo t ->
       hov 1 (str "info" ++ spc () ++ pr_tac (ltactical,E) t),
       linfo
@@ -975,15 +980,6 @@ let strip_prod_binders_glob_constr n (ty,_) =
         | _ -> error "Cannot translate fix tactic: not enough products" in
   strip_ty [] n ty
 
-let strip_prod_binders_constr n ty =
-  let rec strip_ty acc n ty =
-    if n=0 then (List.rev acc, ty) else
-      match Term.kind_of_term ty with
-          Term.Prod(na,a,b) ->
-            strip_ty (([Loc.ghost,na],a)::acc) (n-1) b
-        | _ -> error "Cannot translate fix tactic: not enough products" in
-  strip_ty [] n ty
-
 let drop_env f _env = f
 
 let pr_constr_or_lconstr_pattern_expr b =
@@ -1025,26 +1021,8 @@ let rec glob_printers =
 and pr_glob_tactic_level env n (t:glob_tactic_expr) =
   fst (make_pr_tac glob_printers env) n t
 
-let pr_constr_or_lconstr_pattern b =
-  if b then pr_lconstr_pattern else pr_constr_pattern
-
-let typed_printers =
-    (pr_glob_tactic_level,
-     pr_constr_env,
-     pr_lconstr_env,
-     pr_constr_or_lconstr_pattern,
-     pr_evaluable_reference_env,
-     pr_inductive,
-     pr_ltac_constant,
-     pr_id,
-     pr_extend,
-     strip_prod_binders_constr)
-
-let pr_tactic_level env = fst (make_pr_tac typed_printers env)
-
 let pr_raw_tactic env = pr_raw_tactic_level env ltop
 let pr_glob_tactic env = pr_glob_tactic_level env ltop
-let pr_tactic env = pr_tactic_level env ltop
 
 let _ = Tactic_debug.set_tactic_printer
   (fun x -> pr_glob_tactic (Global.env()) x)

@@ -15,25 +15,6 @@ open Misctypes
 exception Toberemoved_with_rel of int*constr
 exception Toberemoved
 
-
-let pr_elim_scheme el =
-  let env = Global.env () in
-  let msg = str "params := " ++ Printer.pr_rel_context env el.params in
-  let env = Environ.push_rel_context el.params env in
-  let msg = msg ++ fnl () ++ str "predicates := "++ Printer.pr_rel_context env el.predicates in
-  let env = Environ.push_rel_context el.predicates env in
-  let msg = msg ++ fnl () ++ str "branches := " ++ Printer.pr_rel_context env el.branches in
-  let env = Environ.push_rel_context el.branches env in
-  let msg = msg ++ fnl () ++ str "args := " ++ Printer.pr_rel_context env el.args in
-  let env = Environ.push_rel_context el.args env in
-  msg ++ fnl () ++ str "concl := " ++ pr_lconstr_env env el.concl
-
-
-let observe s =
-  if do_observe ()
-  then Pp.msg_debug s
-
-
 let pr_elim_scheme el =
   let env = Global.env () in
   let msg = str "params := " ++ Printer.pr_rel_context env el.params in
@@ -288,22 +269,6 @@ let change_property_sort toSort princ princName =
 
 let pp_dur time time' =
   str (string_of_float (System.time_difference time time'))
-
-(* let qed () = save_named true  *)
-let defined () =
-  try
-    Lemmas.save_named false
-  with
-    | UserError("extract_proof",msg) ->
-	Errors.errorlabstrm
-	  "defined"
-	  ((try
-	      str "On goal : " ++ fnl () ++  pr_open_subgoals () ++ fnl ()
-	    with _ -> mt ()
-	   ) ++msg)
-    | e -> raise e
-
-
 
 let build_functional_principle interactive_proof old_princ_type sorts funs i proof_tac hook =
   (* First we get the type of the old graph principle *)

@@ -11,11 +11,20 @@
 open Genarg
 open Q_util
 open Egramml
-open Pcoq
 open Compat
 
-let loc = Loc.ghost
+let loc = CompatLoc.ghost
 let default_loc = <:expr< Loc.ghost >>
+
+let mk_extraarg prefix s =
+  if Extrawit.tactic_genarg_level s = None then
+    <:expr< $lid:prefix^s$ >>
+  else
+    <:expr<
+      let module WIT = struct
+        open Extrawit;
+        value wit = $lid:prefix^s$;
+      end in WIT.wit >>
 
 let rec make_rawwit loc = function
   | BoolArgType -> <:expr< Genarg.rawwit_bool >>
@@ -40,12 +49,7 @@ let rec make_rawwit loc = function
   | OptArgType t -> <:expr< Genarg.wit_opt $make_rawwit loc t$ >>
   | PairArgType (t1,t2) ->
       <:expr< Genarg.wit_pair $make_rawwit loc t1$ $make_rawwit loc t2$ >>
-  | ExtraArgType s ->
-    <:expr<
-      let module WIT = struct
-        open Extrawit;
-        value wit = $lid:"rawwit_"^s$;
-      end in WIT.wit >>
+  | ExtraArgType s -> mk_extraarg "rawwit_" s
 
 let rec make_globwit loc = function
   | BoolArgType -> <:expr< Genarg.globwit_bool >>
@@ -70,12 +74,7 @@ let rec make_globwit loc = function
   | OptArgType t -> <:expr< Genarg.wit_opt $make_globwit loc t$ >>
   | PairArgType (t1,t2) ->
       <:expr< Genarg.wit_pair $make_globwit loc t1$ $make_globwit loc t2$ >>
-  | ExtraArgType s ->
-    <:expr<
-      let module WIT = struct
-        open Extrawit;
-        value wit = $lid:"globwit_"^s$;
-      end in WIT.wit >>
+  | ExtraArgType s ->  mk_extraarg "globwit_" s
 
 let rec make_wit loc = function
   | BoolArgType -> <:expr< Genarg.wit_bool >>
@@ -100,12 +99,7 @@ let rec make_wit loc = function
   | OptArgType t -> <:expr< Genarg.wit_opt $make_wit loc t$ >>
   | PairArgType (t1,t2) ->
       <:expr< Genarg.wit_pair $make_wit loc t1$ $make_wit loc t2$ >>
-  | ExtraArgType s ->
-    <:expr<
-      let module WIT = struct
-        open Extrawit;
-        value wit = $lid:"wit_"^s$;
-      end in WIT.wit >>
+  | ExtraArgType s -> mk_extraarg "wit_" s
 
 let has_extraarg =
   List.exists (function GramNonTerminal(_,ExtraArgType _,_,_) -> true | _ -> false)
@@ -269,7 +263,6 @@ let declare_vernac_argument loc s pr cl =
         ($wit$, fun _ _ _ _ -> Errors.anomaly "vernac argument needs not wit printer") }
       >> ]
 
-open Vernacexpr
 open Pcoq
 open Pcaml
 open PcamlSig
@@ -321,10 +314,10 @@ EXTEND
   genarg:
     [ [ e = LIDENT; "("; s = LIDENT; ")" ->
         let t, g = interp_entry_name false None e "" in
-	GramNonTerminal (loc, t, g, Some (Names.id_of_string s))
+	GramNonTerminal (!@loc, t, g, Some (Names.id_of_string s))
       | e = LIDENT; "("; s = LIDENT; ","; sep = STRING; ")" ->
         let t, g = interp_entry_name false None e sep in
-	GramNonTerminal (loc, t, g, Some (Names.id_of_string s))
+	GramNonTerminal (!@loc, t, g, Some (Names.id_of_string s))
       | s = STRING ->
 	  if String.length s > 0 && Util.is_letter s.[0] then
 	    Lexer.add_keyword s;

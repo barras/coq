@@ -828,7 +828,6 @@ let subst1 lam = substl [lam]
 let substnl_decl laml k = map_rel_declaration (substnl laml k)
 let substl_decl laml = substnl_decl laml 0
 let subst1_decl lam = substl_decl [lam]
-let substnl_named laml k = map_named_declaration (substnl laml k)
 let substl_named_decl = substl_decl
 let subst1_named_decl = subst1_decl
 
@@ -1236,9 +1235,12 @@ let equals_constr t1 t2 =
 (** Note that the following Make has the side effect of creating
     once and for all the table we'll use for hash-consing all constr *)
 
-module H = Hashtbl_alt.Make(struct type t = constr let equals = equals_constr end)
+module HashsetTerm = Hashset.Make(struct type t = constr let equal = equals_constr end)
 
-open Hashtbl_alt.Combine
+let term_table = HashsetTerm.create 19991
+(* The associative table to hashcons terms. *)
+
+open Hashset.Combine
 
 (* [hcons_term hash_consing_functions constr] computes an hash-consed
    representation for [constr] using [hash_consing_functions] on
@@ -1320,7 +1322,7 @@ let hcons_term (sh_sort,sh_ci,sh_construct,sh_ind,sh_con,sh_na,sh_id) =
     let (y, h) = hash_term t in
     (* [h] must be positive. *)
     let h = h land 0x3FFFFFFF in
-    (H.may_add_and_get h y, h)
+    (HashsetTerm.repr h y term_table, h)
 
   in
   (* Make sure our statically allocated Rels (1 to 16) are considered
@@ -1369,7 +1371,7 @@ module Hsorts =
     struct
       type t = sorts
       type u = universe -> universe
-      let hash_sub huniv = function
+      let hashcons huniv = function
           Prop c -> Prop c
         | Type u -> Type (huniv u)
       let equal s1 s2 =
@@ -1385,7 +1387,7 @@ module Hcaseinfo =
     struct
       type t = case_info
       type u = inductive -> inductive
-      let hash_sub hind ci = { ci with ci_ind = hind ci.ci_ind }
+      let hashcons hind ci = { ci with ci_ind = hind ci.ci_ind }
       let equal ci ci' =
 	ci.ci_ind == ci'.ci_ind &&
 	ci.ci_npar = ci'.ci_npar &&
@@ -1394,8 +1396,8 @@ module Hcaseinfo =
       let hash = Hashtbl.hash
     end)
 
-let hcons_sorts = Hashcons.simple_hcons Hsorts.f hcons_univ
-let hcons_caseinfo = Hashcons.simple_hcons Hcaseinfo.f hcons_ind
+let hcons_sorts = Hashcons.simple_hcons Hsorts.generate hcons_univ
+let hcons_caseinfo = Hashcons.simple_hcons Hcaseinfo.generate hcons_ind
 
 let hcons_constr =
   hcons_term

@@ -6,14 +6,13 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
+open Compat
 open Pp
 open Errors
 open Util
 open Names
-open Term
 open Pcoq
 open Glob_term
-open Genarg
 open Tacexpr
 open Libnames
 open Globnames
@@ -46,14 +45,14 @@ GEXTEND Gram
   xml:
     [ [ "<"; otag = IDENT; attrs = LIST0 attr; ">"; l = LIST1 xml;
         "<"; "/"; ctag = IDENT; ">"  ->
-	  check_tags loc otag ctag;
-	  XmlTag (loc,ctag,attrs,l)
+	  check_tags (!@loc) otag ctag;
+	  XmlTag (!@loc,ctag,attrs,l)
       | "<"; tag = IDENT; attrs = LIST0 attr; "/"; ">" ->
-	  XmlTag (loc,tag,attrs,[])
+	  XmlTag (!@loc,tag,attrs,[])
     ] ]
   ;
   attr:
-    [ [ name = IDENT; "="; data = STRING -> (name, (loc, data)) ] ]
+    [ [ name = IDENT; "="; data = STRING -> (name, (!@loc, data)) ] ]
   ;
 END
 

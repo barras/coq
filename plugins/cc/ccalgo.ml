@@ -58,8 +58,6 @@ module ST=struct
 
   let query sign st=Hashtbl.find st.toterm sign
 
-  let rev_query term st=Hashtbl.find st.tosign term
-
   let delete st t=
     try let sign=Hashtbl.find st.tosign t in
 	Hashtbl.remove st.toterm sign;
@@ -115,7 +113,7 @@ let rec term_equal t1 t2 =
       i1 = i2 && j1 = j2 && eq_constructor c1 c2
     | _ -> t1 = t2
 
-open Hashtbl_alt.Combine
+open Hashset.Combine
 
 let rec hash_term = function
   | Symb c -> combine 1 (hash_constr c)

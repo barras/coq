@@ -8,7 +8,6 @@
 
 open Pp
 open Errors
-open Util
 open Indtypes
 open Type_errors
 open Pretype_errors
@@ -42,6 +41,11 @@ let explain_exn_default = function
   | Sys.Break -> hov 0 (fnl () ++ str "User interrupt.")
   (* Meta-exceptions *)
   | Loc.Exc_located (loc,exc) ->
+      hov 0 ((if loc = Loc.ghost then (mt ())
+               else (str"At location " ++ print_loc loc ++ str":" ++ fnl ()))
+               ++ Errors.print_no_anomaly exc)
+  | Compat.Exc_located (loc, exc) ->
+      let loc = Compat.to_coqloc loc in
       hov 0 ((if loc = Loc.ghost then (mt ())
                else (str"At location " ++ print_loc loc ++ str":" ++ fnl ()))
                ++ Errors.print_no_anomaly exc)
@@ -111,6 +115,9 @@ let rec process_vernac_interp_error = function
         Some (process_vernac_interp_error exc))
   | Loc.Exc_located (loc,exc) ->
       Loc.Exc_located (loc,process_vernac_interp_error exc)
+  | Compat.Exc_located (loc, exc) ->
+      let loc = Compat.to_coqloc loc in
+      Loc.Exc_located (loc, process_vernac_interp_error exc)
   | exc ->
       exc
 

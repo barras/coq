@@ -13,11 +13,11 @@ open Pp
 open Names
 open Nameops
 open Libnames
+open Pputils
 open Ppextend
 open Constrexpr
 open Constrexpr_ops
 open Topconstr
-open Term
 open Decl_kinds
 open Misctypes
 open Locus
@@ -34,7 +34,6 @@ let lif = 200
 let lletin = 200
 let lletpattern = 200
 let lfix = 200
-let larrow = 90
 let lcast = 100
 let larg = 9
 let lapp = 10
@@ -104,7 +103,7 @@ let pr_com_at n =
   if Flags.do_beautify() && n <> 0 then comment n
   else mt()
 
-let pr_with_comments loc pp = Loc.pr_located (fun x -> x) (loc,pp)
+let pr_with_comments loc pp = pr_located (fun x -> x) (loc,pp)
 
 let pr_sep_com sep f c = pr_with_comments (constr_loc c) (sep() ++ f c)
 
@@ -139,12 +138,12 @@ let pr_opt_type_spc pr = function
 let pr_lident (loc,id) =
   if loc <> Loc.ghost then
     let (b,_) = Loc.unloc loc in
-    Loc.pr_located pr_id (Loc.make_loc (b,b+String.length(string_of_id id)),id)
+    pr_located pr_id (Loc.make_loc (b,b+String.length(string_of_id id)),id)
   else pr_id id
 
 let pr_lname = function
     (loc,Name id) -> pr_lident (loc,id)
-  | lna -> Loc.pr_located pr_name lna
+  | lna -> pr_located pr_name lna
 
 let pr_or_var pr = function
   | ArgArg x -> pr x
@@ -611,7 +610,6 @@ let pr_red_flag pr r =
    else
      pr_arg str "delta " ++ (if r.rDelta then str "-" else mt ()) ++
      hov 0 (str "[" ++ prlist_with_sep spc pr r.rConst ++ str "]"))
-
 
 let pr_metaid id = str"?" ++ pr_id id
 

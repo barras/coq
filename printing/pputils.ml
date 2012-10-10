@@ -7,17 +7,9 @@
 (************************************************************************)
 
 open Pp
-open Sign
-open Evd
-open Tacexpr
-open Proof_type
 
-(** These are the entry points for tactics, proof trees, ... *)
-
-val print_proof : evar_map -> named_context -> proof_tree -> std_ppcmds
-val pr_rule     : rule -> std_ppcmds
-val pr_tactic   : tactic_expr -> std_ppcmds
-val print_script :
-  ?nochange:bool -> evar_map -> proof_tree -> std_ppcmds
-val print_treescript :
-  ?nochange:bool -> evar_map -> proof_tree -> std_ppcmds
+let pr_located pr (loc, x) =
+  if Flags.do_beautify () && loc <> Loc.ghost then
+    let (b, e) = Loc.unloc loc in
+    Pp.comment b ++ pr x ++ Pp.comment e
+  else pr x

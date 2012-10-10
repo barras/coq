@@ -26,18 +26,6 @@ val repackage : evar_map ref -> 'a -> 'a sigma
 val apply_sig_tac :
   evar_map ref -> (goal sigma -> goal list sigma) -> goal -> goal list
 
-(** {6 Hiding the implementation of tactics. } *)
-
-(** [abstract_tactic tac] hides the (partial) proof produced by [tac] under
-   a single proof node. The boolean tells if the default tactic is used. *)
-(* spiwack: currently here for compatibility, abstract_operation 
-    is a second projection *)
-val abstract_operation : compound_rule -> tactic -> tactic
-val abstract_tactic : ?dflt:bool -> atomic_tactic_expr -> tactic -> tactic
-val abstract_tactic_expr : ?dflt:bool -> tactic_expr -> tactic -> tactic
-val abstract_extended_tactic :
-  ?dflt:bool -> string -> typed_generic_argument list -> tactic -> tactic
-
 val refiner : rule -> tactic
 
 (** {6 Tacticals. } *)
@@ -136,6 +124,7 @@ val tclDO            : int -> tactic -> tactic
 val tclTIMEOUT       : int -> tactic -> tactic
 val tclWEAK_PROGRESS : tactic -> tactic
 val tclPROGRESS      : tactic -> tactic
+val tclSHOWHYPS      : tactic -> tactic
 val tclNOTSAMEGOAL   : tactic -> tactic
 
 (** [tclIFTHENELSE tac1 tac2 tac3 gls] first applies [tac1] to [gls] then,

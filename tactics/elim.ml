@@ -16,7 +16,6 @@ open Hipattern
 open Tacmach
 open Tacticals
 open Tactics
-open Tacexpr
 open Misctypes
 
 let introElimAssumsThen tac ba =
@@ -122,14 +121,11 @@ let decompose_or c gls =
     (fun (_,t) -> is_disjunction t)
     c gls
 
-let h_decompose l c =
-  Refiner.abstract_tactic (TacDecompose (l,c)) (decompose_these c l)
+let h_decompose l c = decompose_these c l
 
-let h_decompose_or c =
-  Refiner.abstract_tactic (TacDecomposeOr c) (decompose_or c)
+let h_decompose_or = decompose_or
 
-let h_decompose_and c =
-  Refiner.abstract_tactic (TacDecomposeAnd c) (decompose_and c)
+let h_decompose_and = decompose_and
 
 (* The tactic Double performs a double induction *)
 
@@ -174,7 +170,6 @@ let double_ind h1 h2 gls =
              (introElimAssumsThen (induction_trailer abs_i abs_j))
              ([],[]) (mkVar id)))) gls
 
-let h_double_induction h1 h2 =
-  Refiner.abstract_tactic (TacDoubleInduction (h1,h2)) (double_ind h1 h2)
+let h_double_induction = double_ind
 
 

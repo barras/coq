@@ -7,7 +7,6 @@
 (************************************************************************)
 
 open Constrintern
-open Closure
 open Libobject
 open Pattern
 open Patternops
@@ -147,14 +146,6 @@ let ((value_in : value -> Dyn.t),
      (value_out : Dyn.t -> value)) = Dyn.create "value"
 
 let valueIn t = TacDynamic (Loc.ghost,value_in t)
-let valueOut = function
-  | TacDynamic (_,d) ->
-    if (Dyn.tag d) = "value" then
-      value_out d
-    else
-      anomalylabstrm "valueOut" (str "Dynamic tag should be value")
-  | ast ->
-    anomalylabstrm "valueOut" (str "Not a Dynamic ast: ")
 
 (* Table of "pervasives" macros tactics (e.g. auto, simpl, etc.) *)
 let atomic_mactab = ref Idmap.empty
@@ -236,11 +227,7 @@ let lookup_tactic s =
   with Not_found ->
     errorlabstrm "Refiner.lookup_tactic"
       (str"The tactic " ++ str s ++ str" is not installed.")
-(*
-let vernac_tactic (s,args) =
-  let tacfun = lookup_tactic s args in
-  abstract_extended_tactic s args tacfun
-*)
+
 (* Interpretation of extra generic arguments *)
 type glob_sign = {
   ltacvars : identifier list * identifier list;
@@ -708,13 +695,13 @@ let rec intern_atomic lf ist x =
   | TacCase (ev,cb) -> TacCase (ev,intern_constr_with_bindings ist cb)
   | TacCaseType c -> TacCaseType (intern_type ist c)
   | TacFix (idopt,n) -> TacFix (Option.map (intern_ident lf ist) idopt,n)
-  | TacMutualFix (b,id,n,l) ->
+  | TacMutualFix (id,n,l) ->
       let f (id,n,c) = (intern_ident lf ist id,n,intern_type ist c) in
-      TacMutualFix (b,intern_ident lf ist id, n, List.map f l)
+      TacMutualFix (intern_ident lf ist id, n, List.map f l)
   | TacCofix idopt -> TacCofix (Option.map (intern_ident lf ist) idopt)
-  | TacMutualCofix (b,id,l) ->
+  | TacMutualCofix (id,l) ->
       let f (id,c) = (intern_ident lf ist id,intern_type ist c) in
-      TacMutualCofix (b,intern_ident lf ist id, List.map f l)
+      TacMutualCofix (intern_ident lf ist id, List.map f l)
   | TacCut c -> TacCut (intern_type ist c)
   | TacAssert (otac,ipat,c) ->
       TacAssert (Option.map (intern_pure_tactic ist) otac,
@@ -840,6 +827,7 @@ and intern_tactic_seq onlytac ist = function
   | TacFail (n,l) ->
       ist.ltacvars, TacFail (intern_or_var ist n,intern_message ist l)
   | TacProgress tac -> ist.ltacvars, TacProgress (intern_pure_tactic ist tac)
+  | TacShowHyps tac -> ist.ltacvars, TacShowHyps (intern_pure_tactic ist tac)
   | TacAbstract (tac,s) ->
       ist.ltacvars, TacAbstract (intern_pure_tactic ist tac,s)
   | TacThen (t1,[||],t2,[||]) ->
@@ -1291,9 +1279,6 @@ let interp_constr = interp_constr_gen (OfType None)
 let interp_type = interp_constr_gen IsType
 
 (* Interprets an open constr *)
-let interp_open_constr_gen kind ist =
-  interp_gen kind ist false true false false
-
 let interp_open_constr ccl ist =
   interp_gen (OfType ccl) ist false true false (ccl<>None)
 
@@ -1688,6 +1673,11 @@ let verify_metas_coherence gl (ln1,lcm) (ln,lm) =
 
 let adjust (l,lc) = (l,List.map (fun (id,c) -> (id,([],c))) lc)
 
+type 'a extended_matching_result =
+    { e_ctx : 'a;
+      e_sub : bound_ident_map * extended_patvar_map;
+      e_nxt : unit -> 'a extended_matching_result }
+
 (* Tries to match one hypothesis pattern with a list of hypotheses *)
 let apply_one_mhyp_context ist env gl lmatch (hypname,patv,pat) lhyps =
   let get_id_couple id = function
@@ -1699,27 +1689,34 @@ let apply_one_mhyp_context ist env gl lmatch (hypname,patv,pat) lhyps =
         let lmeta = extended_matches t hyp in
         (try
             let lmeta = verify_metas_coherence gl lmatch lmeta in
-            ([],lmeta,(fun () -> raise PatternMatchingFailure))
+            { e_ctx = [];
+	      e_sub = lmeta;
+	      e_nxt = fun () -> raise PatternMatchingFailure }
           with
-            | Not_coherent_metas -> raise PatternMatchingFailure);
+            | Not_coherent_metas -> raise PatternMatchingFailure)
     | Subterm (b,ic,t) ->
         let rec match_next_pattern find_next () =
-          let (lmeta,ctxt,find_next') = find_next () in
+          let s = find_next () in
           try
-            let lmeta = verify_metas_coherence gl lmatch (adjust lmeta) in
-            (give_context ctxt ic,lmeta,match_next_pattern find_next')
+            let lmeta = verify_metas_coherence gl lmatch (adjust s.m_sub) in
+            { e_ctx = give_context s.m_ctx ic;
+	      e_sub = lmeta;
+	      e_nxt = match_next_pattern s.m_nxt }
           with
-            | Not_coherent_metas -> match_next_pattern find_next' () in
-        match_next_pattern (fun () -> match_subterm_gen b t hyp) () in
+            | Not_coherent_metas -> match_next_pattern s.m_nxt ()
+	in
+        match_next_pattern (fun () -> match_subterm_gen b t hyp) ()
+  in
   let rec apply_one_mhyp_context_rec = function
     | (id,b,hyp as hd)::tl ->
 	(match patv with
 	| None ->
             let rec match_next_pattern find_next () =
               try
-                let (ids, lmeta, find_next') = find_next () in
-		(get_id_couple id hypname@ids, lmeta, hd,
-                 match_next_pattern find_next')
+                let s = find_next () in
+		{ e_ctx = (get_id_couple id hypname @ s.e_ctx), hd;
+		  e_sub = s.e_sub;
+                  e_nxt = match_next_pattern s.e_nxt }
               with
                 | PatternMatchingFailure -> apply_one_mhyp_context_rec tl in
             match_next_pattern (fun () ->
@@ -1730,19 +1727,20 @@ let apply_one_mhyp_context ist env gl lmatch (hypname,patv,pat) lhyps =
 	    | Some body ->
                 let rec match_next_pattern_in_body next_in_body () =
                   try
-                    let (ids,lmeta,next_in_body') = next_in_body() in
+                    let s1 = next_in_body() in
                     let rec match_next_pattern_in_typ next_in_typ () =
                       try
-                        let (ids',lmeta',next_in_typ') = next_in_typ() in
-		        (get_id_couple id hypname@ids@ids', lmeta', hd,
-                         match_next_pattern_in_typ next_in_typ')
+			let s2 = next_in_typ() in
+		        { e_ctx = (get_id_couple id hypname@s1.e_ctx@s2.e_ctx), hd;
+			  e_sub = s2.e_sub;
+			  e_nxt = match_next_pattern_in_typ s2.e_nxt }
                       with
                         | PatternMatchingFailure ->
-                            match_next_pattern_in_body next_in_body' () in
+                            match_next_pattern_in_body s1.e_nxt () in
                     match_next_pattern_in_typ
                       (fun () ->
 			let hyp = refresh_universes_strict hyp in
-			match_pat lmeta hyp pat) ()
+			match_pat s1.e_sub hyp pat) ()
                   with PatternMatchingFailure -> apply_one_mhyp_context_rec tl
                 in
                 match_next_pattern_in_body
@@ -1795,8 +1793,7 @@ let rec val_interp ist gl (tac:glob_tactic_expr) =
 and eval_tactic ist = function
   | TacAtom (loc,t) ->
       fun gl ->
-	let box = ref None in abstract_tactic_box := box;
-	let call = LtacAtomCall (t,box) in
+	let call = LtacAtomCall t in
 	let tac = (* catch error in the interpretation *)
 	  catch_error (push_trace(dloc,call)ist.trace)
 	    (interp_atomic ist gl) t	in
@@ -1809,6 +1806,7 @@ and eval_tactic ist = function
       db_breakpoint ist.debug s; res
   | TacFail (n,s) -> fun gl -> tclFAIL (interp_int_or_var ist n) (interp_message ist gl s) gl
   | TacProgress tac -> tclPROGRESS (interp_tactic ist tac)
+  | TacShowHyps tac -> tclSHOWHYPS (interp_tactic ist tac)
   | TacAbstract (tac,ido) ->
       fun gl -> Tactics.tclABSTRACT
         (Option.map (pf_interp_ident ist gl) ido) (interp_tactic ist tac) gl
@@ -2009,7 +2007,7 @@ and interp_match_goal ist goal lz lr lmr =
   let env = pf_env goal in
   let apply_goal_sub app ist (id,c) csr mt mhyps hyps =
     let rec match_next_pattern find_next () =
-      let (lgoal,ctxt,find_next') = find_next () in
+      let { m_sub=lgoal; m_ctx=ctxt; m_nxt=find_next' } = find_next () in
       let lctxt = give_context ctxt id in
       try apply_hyps_context ist env lz goal mt lctxt (adjust lgoal) mhyps hyps
       with e when is_match_catchable e -> match_next_pattern find_next' () in
@@ -2065,14 +2063,15 @@ and apply_hyps_context ist env lz goal mt lctxt lgmatch mhyps hyps =
 	  | Def ((_,hypname),mbod,mhyp) -> hypname, Some mbod, mhyp
 	in
         let rec match_next_pattern find_next =
-          let (lids,lm,hyp_match,find_next') = find_next () in
+          let s = find_next () in
+	  let lids,hyp_match = s.e_ctx in
           db_matched_hyp ist.debug (pf_env goal) hyp_match hypname;
 	  try
             let id_match = pi1 hyp_match in
             let nextlhyps = List.remove_assoc_in_triple id_match lhyps_rest in
-            apply_hyps_context_rec (lfun@lids) lm nextlhyps tl
+            apply_hyps_context_rec (lfun@lids) s.e_sub nextlhyps tl
           with e when is_match_catchable e ->
-	    match_next_pattern find_next' in
+	    match_next_pattern s.e_nxt in
         let init_match_pattern () =
           apply_one_mhyp_context ist env goal lmatch hyp_pat lhyps_rest in
         match_next_pattern init_match_pattern
@@ -2202,7 +2201,7 @@ and interp_genarg_var_list1 ist gl x =
 and interp_match ist g lz constr lmr =
   let apply_match_subterm app ist (id,c) csr mt =
     let rec match_next_pattern find_next () =
-      let (lmatch,ctxt,find_next') = find_next () in
+      let { m_sub=lmatch; m_ctx=ctxt; m_nxt=find_next' } = find_next () in
       let lctxt = give_context ctxt id in
       let lfun = extend_values_with_bindings (adjust lmatch) (lctxt@ist.lfun) in
       try eval_with_fail {ist with lfun=lfun} lz g mt
@@ -2360,7 +2359,7 @@ and interp_atomic ist gl tac =
 	(tclEVARS sigma)
 	(h_case_type c_interp)
   | TacFix (idopt,n) -> h_fix (Option.map (interp_fresh_ident ist env) idopt) n
-  | TacMutualFix (b,id,n,l) ->
+  | TacMutualFix (id,n,l) ->
       let f sigma (id,n,c) =
 	let (sigma,c_interp) = pf_interp_type ist { gl with sigma=sigma } c in
 	sigma , (interp_fresh_ident ist env id,n,c_interp) in
@@ -2372,9 +2371,9 @@ and interp_atomic ist gl tac =
       in
       tclTHEN
 	(tclEVARS sigma)
-	(h_mutual_fix b (interp_fresh_ident ist env id) n l_interp)
+	(h_mutual_fix (interp_fresh_ident ist env id) n l_interp)
   | TacCofix idopt -> h_cofix (Option.map (interp_fresh_ident ist env) idopt)
-  | TacMutualCofix (b,id,l) ->
+  | TacMutualCofix (id,l) ->
       let f sigma (id,c) =
 	let (sigma,c_interp) = pf_interp_type ist { gl with sigma=sigma } c in
 	sigma , (interp_fresh_ident ist env id,c_interp) in
@@ -2386,7 +2385,7 @@ and interp_atomic ist gl tac =
       in
       tclTHEN
 	(tclEVARS sigma)
-	(h_mutual_cofix b (interp_fresh_ident ist env id) l_interp)
+	(h_mutual_cofix (interp_fresh_ident ist env id) l_interp)
   | TacCut c ->
       let (sigma,c_interp) = pf_interp_type ist gl c in
       tclTHEN
@@ -2396,9 +2395,8 @@ and interp_atomic ist gl tac =
       let (sigma,c) = (if t=None then interp_constr else interp_type) ist env sigma c in
       tclTHEN
 	(tclEVARS sigma)
-	(abstract_tactic (TacAssert (t,ipat,c))
-           (Tactics.forward (Option.map (interp_tactic ist) t)
-	      (Option.map (interp_intro_pattern ist gl) ipat) c))
+        (Tactics.forward (Option.map (interp_tactic ist) t)
+	   (Option.map (interp_intro_pattern ist gl) ipat) c)
   | TacGeneralize cl ->
       let sigma, cl = interp_constr_with_occurrences_and_name_as_list ist env sigma cl in
       tclWITHHOLES false (h_generalize_gen) sigma cl
@@ -2495,8 +2493,7 @@ and interp_atomic ist gl tac =
       let sigma, bll = List.fold_map (interp_bindings ist env) sigma bll in
       tclWITHHOLES ev (h_split ev) sigma bll
   | TacAnyConstructor (ev,t) ->
-      abstract_tactic (TacAnyConstructor (ev,t))
-        (Tactics.any_constructor ev (Option.map (interp_tactic ist) t))
+      Tactics.any_constructor ev (Option.map (interp_tactic ist) t)
   | TacConstructor (ev,n,bl) ->
       let sigma, bl = interp_bindings ist env sigma bl in
       tclWITHHOLES ev (h_constructor ev (interp_int_or_var ist n)) sigma bl
@@ -2585,7 +2582,7 @@ and interp_atomic ist gl tac =
 	  sigma , a_interp::acc
 	end l (project gl,[])
       in
-      abstract_extended_tactic opn args (tac args)
+      tac args
   | TacAlias (loc,s,l,(_,body)) -> fun gl ->
     let evdref = ref gl.sigma in
     let f x = match genarg_tag x with
@@ -2722,16 +2719,15 @@ let eval_ltac_constr gl t =
     { lfun=[]; avoid_ids=[]; debug=get_debug(); trace=[] } gl
     (intern_tactic_or_tacarg (make_empty_glob_sign ()) t )
 
-(* Hides interpretation for pretty-print *)
+(* Used to hide interpretation for pretty-print, now just launch tactics *)
 let hide_interp t ot gl =
   let ist = { ltacvars = ([],[]); ltacrecvars = [];
             gsigma = project gl; genv = pf_env gl } in
   let te = intern_tactic true ist t in
   let t = eval_tactic te in
   match ot with
-  | None -> abstract_tactic_expr (TacArg (dloc,Tacexp te)) t gl
-  | Some t' ->
-      abstract_tactic_expr ~dflt:true (TacArg (dloc,Tacexp te)) (tclTHEN t t') gl
+  | None -> t gl
+  | Some t' -> (tclTHEN t t') gl
 
 (***************************************************************************)
 (* Substitution at module closing time *)
@@ -2852,11 +2848,11 @@ let rec subst_atomic subst (t:glob_atomic_tactic_expr) = match t with
   | TacCase (ev,cb) -> TacCase (ev,subst_glob_with_bindings subst cb)
   | TacCaseType c -> TacCaseType (subst_glob_constr subst c)
   | TacFix (idopt,n) as x -> x
-  | TacMutualFix (b,id,n,l) ->
-      TacMutualFix(b,id,n,List.map (fun (id,n,c) -> (id,n,subst_glob_constr subst c)) l)
+  | TacMutualFix (id,n,l) ->
+      TacMutualFix(id,n,List.map (fun (id,n,c) -> (id,n,subst_glob_constr subst c)) l)
   | TacCofix idopt as x -> x
-  | TacMutualCofix (b,id,l) ->
-      TacMutualCofix (b,id, List.map (fun (id,c) -> (id,subst_glob_constr subst c)) l)
+  | TacMutualCofix (id,l) ->
+      TacMutualCofix (id, List.map (fun (id,c) -> (id,subst_glob_constr subst c)) l)
   | TacCut c -> TacCut (subst_glob_constr subst c)
   | TacAssert (b,na,c) ->
       TacAssert (Option.map (subst_tactic subst) b,na,subst_glob_constr subst c)
@@ -2940,6 +2936,7 @@ and subst_tactic subst (t:glob_tactic_expr) = match t with
       TacMatch (lz,subst_tactic subst c,subst_match_rule subst lmr)
   | TacId _ | TacFail _ as x -> x
   | TacProgress tac -> TacProgress (subst_tactic subst tac:glob_tactic_expr)
+  | TacShowHyps tac -> TacShowHyps (subst_tactic subst tac:glob_tactic_expr)
   | TacAbstract (tac,s) -> TacAbstract (subst_tactic subst tac,s)
   | TacThen (t1,tf,t2,tl) ->
       TacThen (subst_tactic subst t1,Array.map (subst_tactic subst) tf,
@@ -3189,16 +3186,6 @@ let tacticIn t =
     with e -> anomalylabstrm "tacticIn"
       (str "Incorrect tactic expression. Received exception is:" ++
        Errors.print e))
-
-let tacticOut = function
-  | TacArg (_,TacDynamic (_,d)) ->
-    if (Dyn.tag d) = "tactic" then
-      tactic_out d
-    else
-      anomalylabstrm "tacticOut" (str "Dynamic tag should be tactic")
-  | ast ->
-    anomalylabstrm "tacticOut"
-      (str "Not a Dynamic ast: " (* ++ print_ast ast*) )
 
 (***************************************************************************)
 (* Backwarding recursive needs of tactic glob/interp/eval functions *)

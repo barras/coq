@@ -23,12 +23,9 @@ open Declarations
 open Tactics
 open Tacticals
 open Hiddentac
-open Equality
 open Auto
-open Pattern
 open Matching
 open Hipattern
-open Proof_type
 open Tacmach
 open Coqlib
 
@@ -74,10 +71,6 @@ let solveNoteqBranch side =
   tclTHEN (choose_noteq side)
     (tclTHEN introf
       (onLastHypId (fun id -> Extratactics.h_discrHyp id)))
-
-let h_solveNoteqBranch side =
-  Refiner.abstract_extended_tactic "solveNoteqBranch" []
-    (solveNoteqBranch side)
 
 (* Constructs the type {c1=c2}+{~c1=c2} *)
 
@@ -154,7 +147,7 @@ let decideGralEquality g =
     in
     (tclTHEN
       (mkBranches c1 c2)
-      (tclORELSE (h_solveNoteqBranch eqonleft) (solveEqBranch rectype)))
+      (tclORELSE (solveNoteqBranch eqonleft) (solveEqBranch rectype)))
     g
   with PatternMatchingFailure ->
     error "The goal must be of the form {x<>y}+{x=y} or {x=y}+{x<>y}."

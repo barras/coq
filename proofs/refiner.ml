@@ -23,38 +23,11 @@ let project x = x.sigma
 let pf_env gls = Global.env_of_context (Goal.V82.hyps (project gls) (sig_it gls))
 let pf_hyps gls = named_context_of_val (Goal.V82.hyps (project gls) (sig_it gls))
 
-let abstract_operation syntax semantics =
-  semantics
+let refiner pr goal_sigma =
+  let (sgl,sigma') = prim_refiner pr goal_sigma.sigma goal_sigma.it in
+  {it=sgl; sigma = sigma'}
 
-let abstract_tactic_expr ?(dflt=false) te tacfun gls =
-  abstract_operation (Tactic(te,dflt)) tacfun gls
-
-let abstract_tactic ?(dflt=false) te =
-  !abstract_tactic_box := Some te;
-  abstract_tactic_expr ~dflt (Tacexpr.TacAtom (Loc.ghost,te))
-
-let abstract_extended_tactic ?(dflt=false) s args =
-  abstract_tactic ~dflt (Tacexpr.TacExtend (Loc.ghost, s, args))
-
-let refiner = function
-  | Prim pr ->
-      let prim_fun = prim_refiner pr in
-	(fun goal_sigma ->
-          let (sgl,sigma') = prim_fun goal_sigma.sigma goal_sigma.it in
-	  {it=sgl; sigma = sigma'})
-
-
-  | Nested (_,_) | Decl_proof _ ->
-      failwith "Refiner: should not occur"
-
-	(* Daimon is a canonical unfinished proof *)
-
-  | Daimon ->
-      fun gls ->
-	{it=[];sigma=gls.sigma}
-
-
-let norm_evar_tac gl = refiner (Prim Change_evars) gl
+let norm_evar_tac gl = refiner (Change_evars) gl
 
 (*********************)
 (*   Tacticals       *)
@@ -117,9 +90,6 @@ let thens3parts_tac tacfi tac tacli (sigr,gs) =
 (* Apply [taci.(i)] on the first n subgoals and [tac] on the others *)
 let thensf_tac taci tac = thens3parts_tac taci tac [||]
 
-(* Apply [taci.(i)] on the last n subgoals and [tac] on the others *)
-let thensl_tac tac taci = thens3parts_tac [||] tac taci
-
 (* Apply [tac i] on the ith subgoal (no subgoals number check) *)
 let thensi_tac tac (sigr,gs) =
   let gll =
@@ -127,22 +97,6 @@ let thensi_tac tac (sigr,gs) =
   (sigr, List.flatten gll)
 
 let then_tac tac = thensf_tac [||] tac
-
-let non_existent_goal n =
-  errorlabstrm ("No such goal: "^(string_of_int n))
-    (str"Trying to apply a tactic to a non existent goal")
-
-(* Apply tac on the i-th goal (if i>0). If i<0, then start counting from
-   the last goal (i=-1). *)
-let theni_tac i tac ((_,gl) as subgoals) =
-  let nsg = List.length gl in
-  let k = if i < 0 then nsg + i + 1 else i in
-  if nsg < 1 then errorlabstrm "theni_tac" (str"No more subgoals.")
-  else if k >= 1 & k <= nsg then
-    thensf_tac
-      (Array.init k (fun i -> if i+1 = k then tac else tclIDTAC)) tclIDTAC
-      subgoals
-  else non_existent_goal k
 
 (* [tclTHENS3PARTS tac1 [|t1 ; ... ; tn|] tac2 [|t'1 ; ... ; t'm|] gls]
    applies the tactic [tac1] to [gls] then, applies [t1], ..., [tn] to
@@ -229,6 +183,35 @@ let tclNOTSAMEGOAL (tac : tactic) goal =
   then errorlabstrm "Refiner.tclNOTSAMEGOAL"
       (str"Tactic generated a subgoal identical to the original goal.")
   else rslt
+
+(* Execute tac and show the names of hypothesis create by tac in
+   the "as" format. The resulting goals are printed *after* the
+   as-expression, which forces pg to some gymnastic. TODO: Have
+   something similar (better?) in the xml protocol. *)
+let tclSHOWHYPS (tac : tactic) (goal: Goal.goal Evd.sigma)
+    :Proof_type.goal list Evd.sigma =
+  let oldhyps:Sign.named_context = pf_hyps goal in
+  let rslt:Proof_type.goal list Evd.sigma = tac goal in
+  let {it=gls;sigma=sigma} = rslt in
+  let hyps:Sign.named_context list =
+    List.map (fun gl -> pf_hyps { it = gl; sigma=sigma}) gls in
+  let newhyps =
+    List.map (fun hypl -> List.subtract hypl oldhyps) hyps in
+  let emacs_str s =
+    if !Flags.print_emacs then s else "" in
+  let s = 
+    let frst = ref true in
+    List.fold_left
+    (fun acc lh -> acc ^ (if !frst then (frst:=false;"") else " | ")
+      ^ (List.fold_left
+	   (fun acc (nm,_,_) -> (Names.string_of_id nm) ^ " " ^ acc)
+	   "" lh))
+    "" newhyps in
+  pp (str (emacs_str "<infoH>")
+      ++  (hov 0 (str s))
+      ++  (str (emacs_str "</infoH>")) ++ fnl());
+  rslt;;
+
 
 let catch_failerror e =
   if catchable_exception e then check_for_interrupt ()

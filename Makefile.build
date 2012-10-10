@@ -72,15 +72,26 @@ READABLE_ML4=	# non-empty means .ml of .ml4 will be ascii instead of binary
 VALIDATE=
 COQ_XML=	# is "-xml" when building XML library
 VM=		# is "-no-vm" to not use the vm"
-TIMECMD=	# is "'time -p'" to get compilation time of .v
 
-# NB: variable TIME, if set, is the formatting string for unix command 'time'.
-# For instance:
-# TIME="%C (%U user, %S sys, %e total, %M maxres)"
+TIMED=          # non-empty will activate a default time command
+                # when compiling .v (see $(STDTIME) below)
+
+TIMECMD=	# if you prefer a specific time command instead of $(STDTIME)
+                # e.g. "'time -p'"
+
+# NB: if you want to collect compilation timings of .v and import them
+# in a spreadsheet, I suggest something like:
+#   make TIMED=1 2> timings.csv
+
+# NB: do not use a variable named TIME, since this variable controls
+# the output format of the unix command time. For instance:
+#   TIME="%C (%U user, %S sys, %e total, %M maxres)"
+
+STDTIME=/usr/bin/time -f "$* (user: %U mem: %M ko)"
+TIMER=$(if $(TIMED), $(STDTIME), $(TIMECMD))
 
 COQOPTS=$(COQ_XML) $(VM)
-BOOTCOQTOP:=$(TIMECMD) $(COQTOPEXE) -boot $(COQOPTS)
-BOOTCOQC:=$(BOOTCOQTOP) -compile
+BOOTCOQC=$(TIMER) $(COQTOPEXE) -boot $(COQOPTS) -compile
 
 # The SHOW and HIDE variables control whether make will echo complete commands 
 # or only abbreviated versions. 
@@ -117,14 +128,15 @@ endif
 
 PR_O := $(if $(READABLE_ML4),pr_o.cmo,pr_dump.cmo) # works also with new camlp4
 
-ifeq ($(CAMLP4),camlp5)
-SYSMOD:=str unix gramlib
-else
-SYSMOD:=str unix dynlink camlp4lib
-endif
-
+SYSMOD:=str unix
 SYSCMA:=$(addsuffix .cma,$(SYSMOD))
 SYSCMXA:=$(addsuffix .cmxa,$(SYSMOD))
+
+ifeq ($(CAMLP4),camlp5)
+P4CMA:=gramlib.cma
+else
+P4CMA:=dynlink.cma camlp4lib.cma
+endif
 
 
 ###########################################################################
@@ -205,6 +217,9 @@ coqlib:: theories plugins
 coqlight: theories-light tools coqbinaries
 
 states: theories/Init/Prelude.vo
+
+miniopt: $(COQTOPEXE) pluginsopt
+minibyte: $(COQTOPBYTE) pluginsbyte
 
 ifeq ($(BEST),opt)
 $(COQTOPEXE): $(COQMKTOP) $(LINKCMX) $(LIBCOQRUN)
@@ -442,7 +457,7 @@ noreal: unicode logic arith bool zarith qarith lists sets fsets \
 ###########################################################################
 
 .PHONY: plugins omega micromega setoid_ring nsatz xml extraction
-.PHONY: fourier funind cc rtauto btauto pluginsopt
+.PHONY: fourier funind cc rtauto btauto pluginsopt pluginsbyte
 
 plugins: $(PLUGINSVO)
 omega: $(OMEGAVO) $(OMEGACMA) $(ROMEGAVO) $(ROMEGACMA)
@@ -458,6 +473,7 @@ rtauto: $(RTAUTOVO) $(RTAUTOCMA)
 btauto: $(BTAUTOVO) $(BTAUTOCMA)
 
 pluginsopt: $(PLUGINSOPT)
+pluginsbyte: $(PLUGINS)
 
 ###########################################################################
 # rules to make theories and plugins
@@ -663,12 +679,12 @@ install-latex:
 source-doc: mli-doc $(OCAMLDOCDIR)/coq.pdf
 
 $(OCAMLDOCDIR)/coq.tex:: $(DOCMLIS:.mli=.cmi)
-	$(OCAMLDOC) -latex -rectypes -I $(MYCAMLP4LIB) $(MLINCLUDES)\
+	$(OCAMLDOC) -latex -I $(MYCAMLP4LIB) $(MLINCLUDES)\
 	$(DOCMLIS) -t "Coq mlis documentation" \
 	-intro $(OCAMLDOCDIR)/docintro -o $@
 
 mli-doc:: $(DOCMLIS:.mli=.cmi)
-	$(OCAMLDOC) -html -rectypes -I $(MYCAMLP4LIB) $(MLINCLUDES)\
+	$(OCAMLDOC) -html -I $(MYCAMLP4LIB) $(MLINCLUDES)\
 	$(DOCMLIS) -d $(OCAMLDOCDIR)/html -colorize-code \
 	-t "Coq mlis documentation" -intro $(OCAMLDOCDIR)/docintro \
 	-css-style style.css
@@ -681,9 +697,9 @@ ml-dot:: $(MLEXTRAFILES)
 	$(DOT) -Tpng $< -o $@
 
 %_types.dot: %.mli
-	$(OCAMLDOC) -rectypes $(MLINCLUDES) $(ODOCDOTOPTS) -dot-types -o $@ $< 
+	$(OCAMLDOC) $(MLINCLUDES) $(ODOCDOTOPTS) -dot-types -o $@ $<
 
-OCAMLDOC_MLLIBD = $(OCAMLDOC) -rectypes $(MLINCLUDES) $(ODOCDOTOPTS) -o $@ \
+OCAMLDOC_MLLIBD = $(OCAMLDOC) $(MLINCLUDES) $(ODOCDOTOPTS) -o $@ \
   $(foreach lib,$(|:.mllib.d=_MLLIB_DEPENDENCIES),$(addsuffix .ml,$($(lib))))
 
 %.dot: | %.mllib.d
@@ -702,7 +718,7 @@ tactics/tactics.dot: | tactics/tactics.mllib.d tactics/hightactics.mllib.d
 	$(OCAMLDOC_MLLIBD)
 
 %.dot: %.mli
-	$(OCAMLDOC) -rectypes $(MLINCLUDES) $(ODOCDOTOPTS) -o $@ $< 
+	$(OCAMLDOC) $(MLINCLUDES) $(ODOCDOTOPTS) -o $@ $<
 
 $(OCAMLDOCDIR)/%.pdf: $(OCAMLDOCDIR)/%.tex
 	(cd $(OCAMLDOCDIR) ; pdflatex $*.tex && pdflatex $*.tex)
@@ -713,7 +729,7 @@ $(OCAMLDOCDIR)/%.pdf: $(OCAMLDOCDIR)/%.tex
 
 dev/printers.cma: | dev/printers.mllib.d
 	$(SHOW)'Testing $@'
-	$(HIDE)$(OCAMLC) $(BYTEFLAGS) $(SYSCMA) $^ -o test-printer
+	$(HIDE)$(OCAMLC) $(BYTEFLAGS) $(SYSCMA) $(P4CMA) $^ -o test-printer
 	@rm -f test-printer
 	$(SHOW)'OCAMLC -a $@'   
 	$(HIDE)$(OCAMLC) $(BYTEFLAGS) $^ -linkall -a -o $@
@@ -726,25 +742,6 @@ grammar/grammar.cma: | grammar/grammar.mllib.d
 	$(SHOW)'OCAMLC -a $@'   
 	$(HIDE)$(OCAMLC) $(BYTEFLAGS) $^ -linkall -a -o $@
 
-# toplevel/mltop.ml4 (ifdef Byte)
-
-## NB: mltop.ml correspond to the byte version (and hence need no special rules)
-## while the opt version is in mltop.optml. Since mltop.optml uses mltop.ml.d
-## as dependency file, be sure to import the same modules in the different sections
-## of the ml4
-
-toplevel/mltop.cmx: toplevel/mltop.optml | toplevel/mltop.ml.d toplevel/mltop.ml4.d
-	$(SHOW)'OCAMLOPT  $<'
-	$(HIDE)$(OCAMLOPT) $(OPTFLAGS) -c -impl $< -o $@
-
-toplevel/mltop.ml: toplevel/mltop.ml4 config/Makefile # no camlp4deps here
-	$(SHOW)'CAMLP4O   $<'
-	$(HIDE)$(CAMLP4O) $(PR_O) $(CAMLP4USE) -DByte -DHasDynlink -impl $< -o $@
-
-toplevel/mltop.optml: toplevel/mltop.ml4 config/Makefile # no camlp4deps here
-	$(SHOW)'CAMLP4O   $<'
-	$(HIDE)$(CAMLP4O) $(PR_O) $(CAMLP4USE) $(NATDYNLINKDEF) -impl $< -o $@
-
 ide/coqide_main.ml: ide/coqide_main.ml4
 	$(SHOW)'CAMLP4O   $<'
 	$(HIDE)$(CAMLP4O) $(PR_O) $(CAMLP4USE) -impl $< -o $@
@@ -753,6 +750,18 @@ ide/coqide_main_opt.ml: ide/coqide_main.ml4 config/Makefile # no camlp4deps here
 	$(SHOW)'CAMLP4O   $<'
 	$(HIDE)$(CAMLP4O) $(PR_O) $(CAMLP4USE) -D$(IDEOPTINT) -impl $< -o $@
 
+# Specific rule for term.ml which uses -rectypes
+# Since term.mli doesn't need -rectypes, this doesn't impact the other ml files
+
+TERM:=kernel/term
+
+$(TERM).cmo: $(TERM).ml | $(TERM).ml.d
+	$(SHOW)'OCAMLC -rectypes $<'
+	$(HIDE)$(OCAMLC) $(BYTEFLAGS) -rectypes -c $<
+
+$(TERM).cmx: $(TERM).ml | $(TERM).ml.d
+	$(SHOW)'OCAMLOPT -rectypes $<'
+	$(HIDE)$(OCAMLOPT) $(OPTFLAGS) -intf-suffix .cmi -rectypes -c $<
 
 # pretty printing of the revision number when compiling a checked out
 # source tree
