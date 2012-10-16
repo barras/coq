@@ -365,8 +365,10 @@ open Pp
 let univ_combinator env (cst,univ) (j,c') =
   try
     (j,(union_constraints cst c', merge_constraints c' univ))
-  with UniverseInconsistency (cstr, u, v) when not (universe_consistency env) ->
-    msgnl (str"Universe inconsistency found: " ++ warn_inconsistency cstr u v);
+  with UniverseInconsistency (cstr, u, v, p)
+      when not (universe_consistency env) ->
+    msgnl (str"Universe inconsistency found: " ++ spc() ++
+	     warn_inconsistency cstr u v p);
     (j,(cst,univ))
 
 

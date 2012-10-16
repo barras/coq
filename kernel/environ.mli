@@ -160,7 +160,9 @@ val set_engagement : engagement -> env -> env
 (* Warn or fail on universe inconsistencies *)
 val universe_consistency : env -> bool
 val set_universe_consistency : bool -> env -> env
-val warn_inconsistency : Univ.constraint_type -> Univ.universe -> Univ.universe -> Pp.std_ppcmds
+val warn_inconsistency :
+  Univ.constraint_type -> Univ.universe -> Univ.universe ->
+  Univ.explanation -> Pp.std_ppcmds
 
 (** {6 Sets of referred section variables }
    [global_vars_set env c] returns the list of [id]'s occurring either

@@ -6,6 +6,8 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
+(*i camlp4deps: "grammar/grammar.cma" i*)
+
 open Pp
 open Compat
 open Tok
@@ -75,6 +77,7 @@ GEXTEND Gram
     [ [ IDENT "Time"; v = vernac -> VernacTime v
       | IDENT "Timeout"; n = natural; v = vernac -> VernacTimeout(n,v)
       | IDENT "Fail"; v = vernac -> VernacFail v
+      | IDENT "Unsafe"; v = vernac -> VernacUnsafe v
       | locality; v = vernac_aux -> v ] ]
   ;
   vernac_aux:

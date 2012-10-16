@@ -358,8 +358,10 @@ let existential_opt_value d e = EvarMap.existential_opt_value d.evars e
 
 let add_constraints d e = 
   try {d with evars= EvarMap.add_constraints d.evars e}
-  with Univ.UniverseInconsistency (cstr, u, v) when not (universe_consistency (Global.env ())) ->
-    msgnl (str"Universe inconsistency found: " ++ Environ.warn_inconsistency cstr u v);
+  with Univ.UniverseInconsistency (cstr, u, v, p)
+      when not (universe_consistency (Global.env ())) ->
+    msgnl (str"Universe inconsistency found: " ++ spc() ++
+	     Environ.warn_inconsistency cstr u v p);
     d
 
 (*** /Lifting... ***)

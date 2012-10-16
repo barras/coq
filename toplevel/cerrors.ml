@@ -64,21 +64,9 @@ let wrap_vernac_error strm =
 
 let rec process_vernac_interp_error = function
   | Univ.UniverseInconsistency (o,u,v,p) ->
-    let pr_rel r =
-      match r with
-	  Univ.Eq -> str"=" | Univ.Lt -> str"<" | Univ.Le -> str"<=" in
-    let reason = match p with
-	[] -> mt()
-      | _::_ ->
-	str " because" ++ spc() ++ Univ.pr_uni v ++
-	  prlist (fun (r,v) -> spc() ++ pr_rel r ++ str" " ++ Univ.pr_uni v)
-	  p ++
-	  (if snd (CList.last p)=u then mt() else
-	      (spc() ++ str "= " ++ Univ.pr_uni u)) in
     let msg =
       if !Constrextern.print_universes then
-	spc() ++ str "(cannot enforce" ++ spc() ++ Univ.pr_uni u ++ spc() ++
-          pr_rel o ++ spc() ++ Univ.pr_uni v ++ reason ++ str")"
+	(spc() ++ str "("++Environ.warn_inconsistency o u v p ++ str")")
       else
 	mt() in
     wrap_vernac_error (str "Universe inconsistency" ++ msg ++ str ".")

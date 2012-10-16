@@ -201,16 +201,24 @@ let add_mind kn mib env =
 let universe_consistency env = env.env_stratification.env_consistency
 
 let set_universe_consistency b env =
-  if not b || env.env_stratification.env_consistency then 
-    { env with env_stratification =
-     { env.env_stratification with env_consistency = b } }
-  else error "Cannot turn universe consistency checking back on"
+  { env with env_stratification =
+      { env.env_stratification with env_consistency = b } }
 
 open Pp
-let warn_inconsistency o u v =
-  spc() ++ str "cannot enforce" ++ spc() ++ Univ.pr_uni u ++ spc() ++
-  str (match o with Univ.Lt -> "<" | Univ.Le -> "<=" | Univ.Eq -> "=")
-  ++ spc() ++ Univ.pr_uni v
+let warn_inconsistency o u v p =
+  let pr_rel r =
+    match r with
+	Univ.Eq -> str"=" | Univ.Lt -> str"<" | Univ.Le -> str"<=" in
+  let reason = match p with
+      [] -> mt()
+    | _::_ ->
+      str " because" ++ spc() ++ Univ.pr_uni v ++
+	prlist (fun (r,v) -> spc() ++ pr_rel r ++ str" " ++ Univ.pr_uni v)
+	p ++
+	(if snd (CList.last p)=u then mt() else
+	    (spc() ++ str "= " ++ Univ.pr_uni u)) in
+  str "cannot enforce" ++ spc() ++ Univ.pr_uni u ++ spc() ++
+    pr_rel o ++ spc() ++ Univ.pr_uni v ++ reason
 
 
 let add_constraints c env =
@@ -221,8 +229,10 @@ let add_constraints c env =
       try 
         { env with env_stratification =
 	{ s with env_universes = merge_constraints c s.env_universes } }
-      with UniverseInconsistency (cstr, u, v) when not (universe_consistency env) ->
-        msgnl (str"Universe inconsistency found: " ++ warn_inconsistency cstr u v);
+      with UniverseInconsistency (cstr, u, v, p)
+	  when not (universe_consistency env) ->
+        msgnl (str"Universe inconsistency found: " ++
+		 spc() ++ warn_inconsistency cstr u v p);
         env
 
 let set_engagement c env = (* Unsafe *)

@@ -484,6 +484,7 @@ let rec pr_vernac = function
   | VernacTime v -> str"Time" ++ spc() ++ pr_vernac v
   | VernacTimeout(n,v) -> str"Timeout " ++ int n ++ spc() ++ pr_vernac v
   | VernacFail v -> str"Fail" ++ spc() ++ pr_vernac v
+  | VernacUnsafe v -> str"Unsafe " ++ pr_vernac v
 
   (* Syntax *)
   | VernacTacticNotation (local,n,r,e) ->

@@ -1637,11 +1637,18 @@ let vernac_check_guard () =
   in
   msg_notice message
 
-let interp c = match c with
+let rec interp c = match c with
   (* Control (done in vernac) *)
   | (VernacTime _|VernacList _|VernacLoad _|VernacTimeout _|VernacFail _) ->
       assert false
 
+  | VernacUnsafe c ->
+    (let b = Environ.universe_consistency (Global.env()) in
+     try
+       Global.set_universe_consistency false;
+       interp c;      
+       Global.set_universe_consistency b
+     with e -> Global.set_universe_consistency b; raise e)
   (* Syntax *)
   | VernacTacticNotation (b,n,r,e) -> Metasyntax.add_tactic_notation (b,n,r,e)
   | VernacSyntaxExtension (lcl,sl) -> vernac_syntax_extension lcl sl
