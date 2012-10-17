@@ -76,10 +76,10 @@ let my_it_mkLambda_or_LetIn_name s c =
 
 let get_coq_eq () =
   try
-    let eq = Globnames.destIndRef Coqlib.glob_eq in
+    let eq = Globnames.destIndRef Coqlib.Std.glob_eq in
     let _ = Global.lookup_inductive eq in
     (* Do not force the lazy if they are not defined *)
-    mkInd eq, Coqlib.build_coq_eq_refl ()
+    mkInd eq, Coqlib.Std.build_coq_eq_refl ()
   with Not_found ->
     error "eq not found."
 

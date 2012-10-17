@@ -300,7 +300,9 @@ let projectAndApply thin id eqname names depids gls =
       (if thin then clear [id] else (remember_first_eq id eqname; tclIDTAC))
   in
   let substHypIfVariable tac id gls =
-    let (t,t1,t2) = Hipattern.dest_nf_eq gls (pf_get_hyp_typ gls id) in
+    let (eq,t,t1,t2) = Hipattern.dest_eq (pf_get_hyp_typ gls id) in
+    let t1 = pf_whd_betadeltaiota gls t1 in
+    let t2 = pf_whd_betadeltaiota gls t2 in
     match (kind_of_term t1, kind_of_term t2) with
     | Var id1, _ -> generalizeRewriteIntros (subst_hyp true id) depids id1 gls
     | _, Var id2 -> generalizeRewriteIntros (subst_hyp false id) depids id2 gls
