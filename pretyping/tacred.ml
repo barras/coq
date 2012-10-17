@@ -1099,6 +1099,27 @@ let one_step_reduce env sigma c =
 
 let isIndRef = function IndRef _ -> true | _ -> false
 
+let reduce_to_symbol_gen allow_product env sigma symbols t =
+  (* lazily reduces to match the head of [t] with the expected [ref] *)
+  let rec elimrec env t l =
+    let c, _ = Reductionops.whd_nored_stack sigma t in
+    match kind_of_term c with
+      | Prod (n,ty,t') ->
+	  if allow_product then
+	    elimrec (push_rel (n,None,t) env) t' ((n,None,ty)::l)
+	  else raise Not_found
+      | _ ->
+	  try
+	    let data = symbols c in
+	    (data, it_mkProd_or_LetIn t l)
+	  with Not_found ->
+          try
+	    let t' = nf_betaiota sigma (one_step_reduce env sigma t) in
+            elimrec env t' l
+          with NotStepReducible -> raise Not_found
+  in
+  elimrec env t []
+
 let reduce_to_ref_gen allow_product env sigma ref t =
   if isIndRef ref then
     let (mind,t) = reduce_to_ind_gen allow_product env sigma t in
@@ -1108,32 +1129,20 @@ let reduce_to_ref_gen allow_product env sigma ref t =
     else
       t
   else
-  (* lazily reduces to match the head of [t] with the expected [ref] *)
-  let rec elimrec env t l =
-    let c, _ = Reductionops.whd_nored_stack sigma t in
-    match kind_of_term c with
-      | Prod (n,ty,t') ->
-	  if allow_product then
-	    elimrec (push_rel (n,None,t) env) t' ((n,None,ty)::l)
-	  else
-	     errorlabstrm ""
-	       (str "Cannot recognize an atomic statement based on " ++
-	        Nametab.pr_global_env Idset.empty ref ++ str".")
-      | _ ->
-	  try
-	    if global_of_constr c = ref
-	    then it_mkProd_or_LetIn t l
-	    else raise Not_found
-	  with Not_found ->
-          try
-	    let t' = nf_betaiota sigma (one_step_reduce env sigma t) in
-            elimrec env t' l
-          with NotStepReducible ->
-	    errorlabstrm ""
-	      (str "Cannot recognize a statement based on " ++
-	       Nametab.pr_global_env Idset.empty ref ++ str".")
-  in
-  elimrec env t []
+    try
+      snd(reduce_to_symbol_gen  allow_product env sigma
+	    (fun c -> if global_of_constr c <> ref then raise Not_found)
+	    t)
+    with Not_found ->
+      if allow_product then
+	errorlabstrm "reduce_to_ref_gen"
+	  (str "Cannot recognize a quantified statement based on " ++
+	     Nametab.pr_global_env Idset.empty ref ++ str".")
+      else
+	errorlabstrm "reduce_to_ref_gen"
+	  (str "Cannot recognize an atomic statement based on " ++
+	     Nametab.pr_global_env Idset.empty ref ++ str".")
 
+let reduce_to_quantified_symbol x = reduce_to_symbol_gen true x
 let reduce_to_quantified_ref = reduce_to_ref_gen true
 let reduce_to_atomic_ref = reduce_to_ref_gen false

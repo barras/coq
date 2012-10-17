@@ -75,8 +75,8 @@ let solveNoteqBranch side =
 (* Constructs the type {c1=c2}+{~c1=c2} *)
 
 let mkDecideEqGoal eqonleft op rectype c1 c2 g =
-  let equality    = mkApp(build_coq_eq(), [|rectype; c1; c2|]) in
-  let disequality = mkApp(build_coq_not (), [|equality|]) in
+  let equality    = mkApp(Std.build_coq_eq(), [|rectype; c1; c2|]) in
+  let disequality = mkApp(Std.build_coq_not (), [|equality|]) in
   if eqonleft then mkApp(op, [|equality; disequality |])
   else mkApp(op, [|disequality; equality |])
 

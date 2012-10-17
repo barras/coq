@@ -87,6 +87,13 @@ val cbv_norm_flags : Closure.RedFlags.reds ->  reduction_function
    returns [I] and [t'] or fails with a user error *)
 val reduce_to_atomic_ind : env ->  evar_map -> types -> inductive * types
 
+(** [reduce_to_quantified_symbol env sigma symbols t] try to put [t] in the form
+   [t'=(x1:A1)..(xn:An)(ref args)] with (symbols ref) not raising Not_found, and
+   returns the result of (symbols ref) together with the reduced form of [t]
+   and fails with user error if not possible *)
+val reduce_to_quantified_symbol :
+  env ->  evar_map -> (constr -> 'a) -> types -> 'a * types
+
 (** [reduce_to_quantified_ind env sigma t] puts [t] in the form
    [t'=(x1:A1)..(xn:An)(I args)] with [I] an inductive definition;
    returns [I] and [t'] or fails with a user error *)

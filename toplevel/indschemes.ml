@@ -38,6 +38,7 @@ open Ind_tables
 open Auto_ind_decl
 open Eqschemes
 open Elimschemes
+open Coqlib
 
 (* Flags governing automatic synthesis of schemes *)
 
@@ -418,7 +419,8 @@ let build_combined_scheme env schemes =
   let ctx, ind, nargs = find_inductive t in
   (* Number of clauses, including the predicates quantification *)
   let prods = nb_prod t - (nargs + 1) in
-  let coqand = Coqlib.build_coq_and () and coqconj = Coqlib.build_coq_conj () in
+  let logic = Coqlib.find_logic None in
+  let coqand = logic.log_and and coqconj = logic.log_conj in
   let relargs = rel_vect 0 prods in
   let concls = List.rev_map
     (fun (cst, t) ->

@@ -114,6 +114,7 @@ type coq_logic = {
 type logic_id = sorts_family
 val declare_logic : ?default:bool -> logic_id -> coq_logic -> unit
 val find_logic : logic_id option -> coq_logic
+val search_logic : (coq_logic -> bool) -> coq_logic list
 
 
 (** {6 ... } *)
@@ -171,7 +172,7 @@ type coq_equality = {
 type equality_id = constr
 val declare_equality : ?default:bool -> equality_id -> coq_equality -> unit
 val find_equality : equality_id option -> coq_equality
-
+val search_equality : (coq_equality -> bool) -> coq_equality list
 
 (** Specif *)
 val build_coq_sumbool : constr delayed

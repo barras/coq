@@ -26,6 +26,7 @@ open Elim
 open Equality
 open Misctypes
 open Tacexpr
+open Coqlib
 
 let collect_meta_variables c =
   let rec collrec acc c = match kind_of_term c with
@@ -127,8 +128,8 @@ let make_inv_predicate env sigma indf realargs id status concl =
           else
 	    make_iterated_tuple env' sigma ai (xi,ti)
 	in
-        let eq_term = Coqlib.build_coq_eq () in
-        let eqn = applist (eq_term ,[eqnty;lhs;rhs]) in
+        let eqd = Coqlib.find_equality None in
+        let eqn = applist (eqd.eq_data.eq ,[eqnty;lhs;rhs]) in
 	build_concl ((Anonymous,lift n eqn)::eqns) (n+1) restlist
   in
   let (newconcl,neqns) = build_concl [] 0 pairs in

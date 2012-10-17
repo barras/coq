@@ -23,7 +23,7 @@ let absurd c gls =
   let _,j = Coercion.inh_coerce_to_sort Loc.ghost env
     (Evd.create_goal_evar_defs sigma) (Retyping.get_judgment_of env sigma c) in
   let c = j.Environ.utj_val in
-  let log = Coqlib.find_logic (family_of_sort j.Environ.utj_type) in
+  let log = Coqlib.find_logic (Some(family_of_sort j.Environ.utj_type)) in
   (tclTHENS
      (tclTHEN (elim_type log.log_False) (cut c))
      ([(tclTHENS
