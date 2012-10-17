@@ -236,8 +236,8 @@ let register_is_applied_rewrite_relation = (:=) is_applied_rewrite_relation
 
 let find_elim hdcncl lft2rgt dep cls args gl =
   let inccl = Option.is_empty cls in
-  if (eq_constr hdcncl (constr_of_reference (Coqlib.glob_eq)) ||
-      eq_constr hdcncl (constr_of_reference (Coqlib.glob_jmeq)) &&
+  if (eq_constr hdcncl (constr_of_reference (Coqlib.Std.glob_eq)) ||
+      eq_constr hdcncl (constr_of_reference (Coqlib.Std.glob_jmeq)) &&
       pf_conv_x gl (List.nth args 0) (List.nth args 2)) && not dep
     || Flags.version_less_or_equal Flags.V8_2
   then
@@ -449,17 +449,16 @@ let multi_replace clause c2 c1 unsafe try_prove_eq_opt gl =
   let t1 = pf_apply get_type_of gl c1
   and t2 = pf_apply get_type_of gl c2 in
   if unsafe or (pf_conv_x gl t1 t2) then
-    let e = build_coq_eq () in
-    let sym = build_coq_eq_sym () in
-    let eq = applist (e, [t1;c1;c2]) in
-    tclTHENS (assert_as false None eq)
+    let {eq_data=eq} = Coqlib.find_equality None in
+    let equ = applist (eq.eq, [t1;c1;c2]) in
+    tclTHENS (assert_as false None equ)
       [onLastHypId (fun id ->
 	tclTHEN
 	  (tclTRY (general_multi_rewrite false false (mkVar id,NoBindings) clause))
 	  (clear [id]));
        tclFIRST
 	 [assumption;
-	  tclTHEN (apply sym) assumption;
+	  tclTHEN (apply eq.sym) assumption;
 	  try_prove_eq
 	 ]
       ] gl
@@ -693,12 +692,12 @@ let construct_discriminator sigma env dirn c sort =
 		 dependent types.") in
   let (ind,_) = dest_ind_family indf in
   let (mib,mip) = lookup_mind_specif env ind in
-  let (true_0,false_0,sort_0) = build_coq_True(),build_coq_False(),Prop Null in
+  let log = Coqlib.find_logic None in
   let deparsign = make_arity_signature env true indf in
-  let p = it_mkLambda_or_LetIn (mkSort sort_0) deparsign in
+  let p = it_mkLambda_or_LetIn (mkSort log.log_bottom_sort) deparsign in
   let cstrs = get_constructors env indf in
   let build_branch i =
-    let endpt = if Int.equal i dirn then true_0 else false_0 in
+    let endpt = if Int.equal i dirn then log.log_True else log.log_False in
     it_mkLambda_or_LetIn endpt cstrs.(i-1).cs_args in
   let brl =
     List.map build_branch(List.interval 1 (Array.length mip.mind_consnames)) in
@@ -750,8 +749,9 @@ let ind_scheme_of_eq lbeq =
 
 
 let discrimination_pf e (t,t1,t2) discriminator lbeq =
-  let i           = build_coq_I () in
-  let absurd_term = build_coq_False () in
+  let logic = Coqlib.find_logic None in
+  let i           = logic.log_I in
+  let absurd_term = logic.log_False in
   let eq_elim     = ind_scheme_of_eq lbeq in
   (applist (eq_elim, [t;t1;mkNamedLambda e t discriminator;i;t2]), absurd_term)
 
@@ -1122,7 +1122,7 @@ let injEq ipats (eq,_,(t,t1,t2) as u) eq_clause =
 *)
         try (
 (* fetch the informations of the  pair *)
-        let ceq = constr_of_global Coqlib.glob_eq in
+        let ceq = eq.eq in
         let sigTconstr () = (Coqlib.build_sigma_type()).Coqlib.typ in
         let eqTypeDest = fst (destApp t) in
         let _,ar1 = destApp t1 and
@@ -1389,9 +1389,9 @@ let unfold_body x gl =
 
 
 
-let restrict_to_eq_and_identity eq = (* compatibility *)
-  if not (eq_constr eq (constr_of_global glob_eq)) &&
-    not (eq_constr eq (constr_of_global glob_identity)) then
+let restrict_to_declared_eq eq = (* compatibility *)
+  try ignore (find_equality (Some eq))
+  with Not_found ->
     raise PatternMatchingFailure
 
 exception FoundHyp of (identifier * constr * bool)
@@ -1488,7 +1488,7 @@ let subst_all ?(flags=default_subst_tactic_flags ()) gl =
   let test (_,c) =
     try
       let lbeq,(_,x,y) = find_eq_data_decompose gl c in
-      if flags.only_leibniz then restrict_to_eq_and_identity lbeq.eq;
+      if flags.only_leibniz then restrict_to_declared_eq lbeq.eq;
       (* J.F.: added to prevent failure on goal containing x=x as an hyp *)
       if eq_constr x y then failwith "caught";
       match kind_of_term x with Var x -> x | _ ->

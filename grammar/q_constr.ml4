@@ -59,10 +59,10 @@ EXTEND
         <:expr< Glob_term.GProd ($dloc$,Anonymous,Decl_kinds.Explicit,$c1$,$c2$) >> ]
     | "75" RIGHTA
       [ "~"; c = constr ->
-        apply_ref <:expr< coq_not_ref >> [c] ]
+        apply_ref <:expr< Coqlib.Std.coq_not_ref >> [c] ]
     | "70" RIGHTA
       [ c1 = constr; "="; c2 = NEXT; ":>"; t = NEXT ->
-        apply_ref <:expr< coq_eq_ref >> [t;c1;c2] ]
+        apply_ref <:expr< Coqlib.Std.coq_eq_ref >> [t;c1;c2] ]
     | "10" LEFTA
       [ f = constr; args = LIST1 NEXT ->
         let args = mlexpr_of_list (fun x -> x) args in
@@ -73,7 +73,7 @@ EXTEND
       | "_" -> <:expr< Glob_term.GHole ($dloc$,Evar_kinds.QuestionMark (Evar_kinds.Define False)) >>
       | "?"; id = ident -> <:expr< Glob_term.GPatVar($dloc$,(False,$id$)) >>
       | "{"; c1 = constr; "}"; "+"; "{"; c2 = constr; "}" ->
-          apply_ref <:expr< coq_sumbool_ref >> [c1;c2]
+          apply_ref <:expr< Coqlib.Std.coq_sumbool_ref >> [c1;c2]
       | "%"; e = string -> <:expr< Glob_term.GRef ($dloc$,Lazy.force $lid:e$) >>
       | c = match_constr -> c
       | "("; c = constr LEVEL "200"; ")" -> c ] ]

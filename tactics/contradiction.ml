@@ -23,10 +23,11 @@ let absurd c gls =
   let _,j = Coercion.inh_coerce_to_sort Loc.ghost env
     (Evd.create_goal_evar_defs sigma) (Retyping.get_judgment_of env sigma c) in
   let c = j.Environ.utj_val in
+  let log = Coqlib.find_logic (Some(family_of_sort j.Environ.utj_type)) in
   (tclTHENS
-     (tclTHEN (elim_type (build_coq_False ())) (cut c))
+     (tclTHEN (elim_type log.log_False) (cut c))
      ([(tclTHENS
-          (cut (applist(build_coq_not (),[c])))
+          (cut (applist(log.log_not,[c])))
 	  ([(tclTHEN intros
 	       ((fun gl ->
 		   let ida = pf_nth_hyp_id gl 1

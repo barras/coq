@@ -1777,7 +1777,7 @@ let letin_tac_gen with_eq name (sigmac,c) test ty occs gl =
 	| IntroFresh heq_base -> fresh_id [id] heq_base gl
         | IntroIdentifier id -> id
 	| _ -> error"Expect an introduction pattern naming one hypothesis." in
-      let eqdata = build_coq_eq_data () in
+      let eqdata = Std.build_coq_eq_data () in
       let args = if lr then [t;mkVar id;c] else [t;c;mkVar id]in
       let eq = applist (eqdata.eq,args) in
       let refl = applist (eqdata.refl, [t;mkVar id]) in
@@ -2279,8 +2279,8 @@ let error_ind_scheme s =
   let s = if not (String.equal s "") then s^" " else s in
   error ("Cannot recognize "^s^"an induction scheme.")
 
-let coq_eq = Lazy.lazy_from_fun Coqlib.build_coq_eq
-let coq_eq_refl = lazy ((Coqlib.build_coq_eq_data ()).Coqlib.refl)
+let coq_eq = Lazy.lazy_from_fun Coqlib.Std.build_coq_eq
+let coq_eq_refl = lazy ((Coqlib.Std.build_coq_eq_data ()).Coqlib.refl)
 
 let coq_heq = lazy (Coqlib.coq_constant "mkHEq" ["Logic";"JMeq"] "JMeq")
 let coq_heq_refl = lazy (Coqlib.coq_constant "mkHEq" ["Logic";"JMeq"] "JMeq_refl")

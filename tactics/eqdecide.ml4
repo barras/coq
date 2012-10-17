@@ -74,22 +74,22 @@ let solveNoteqBranch side =
 
 (* Constructs the type {c1=c2}+{~c1=c2} *)
 
-let mkDecideEqGoal eqonleft op rectype c1 c2 g =
-  let equality    = mkApp(build_coq_eq(), [|rectype; c1; c2|]) in
-  let disequality = mkApp(build_coq_not (), [|equality|]) in
+let mkDecideEqGoal eqd eqonleft op rectype c1 c2 g =
+  let equality    = mkApp(eqd.eq_data.eq, [|rectype; c1; c2|]) in
+  let disequality = mkApp(eqd.eq_logic.log_not, [|equality|]) in
   if eqonleft then mkApp(op, [|equality; disequality |])
   else mkApp(op, [|disequality; equality |])
 
 
 (* Constructs the type (x1,x2:R){x1=x2}+{~x1=x2} *)
 
-let mkGenDecideEqGoal rectype g =
+let mkGenDecideEqGoal eqd rectype g =
   let hypnames = pf_ids_of_hyps g in
   let xname    = next_ident_away (id_of_string "x") hypnames
   and yname    = next_ident_away (id_of_string "y") hypnames in
   (mkNamedProd xname rectype
      (mkNamedProd yname rectype
-        (mkDecideEqGoal true (build_coq_sumbool ())
+        (mkDecideEqGoal eqd true (build_coq_sumbool ())
           rectype (mkVar xname) (mkVar yname) g)))
 
 let eqCase tac =
@@ -155,7 +155,8 @@ let decideGralEquality g =
 let decideEqualityGoal = tclTHEN intros decideGralEquality
 
 let decideEquality rectype g =
-  let decide  = mkGenDecideEqGoal rectype g in
+  let eqd = Coqlib.find_equality None in
+  let decide  = mkGenDecideEqGoal eqd rectype g in
   (tclTHENS (cut decide) [default_auto;decideEqualityGoal]) g
 
 

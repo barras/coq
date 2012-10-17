@@ -244,31 +244,29 @@ open Globnames
 let match_with_equation t =
   if not (isApp t) then raise NoEquationFound;
   let (hdapp,args) = destApp t in
-  match kind_of_term hdapp with
-  | Ind ind ->
-      if eq_gr (IndRef ind) glob_eq then
-	Some (build_coq_eq_data()),hdapp,
-	PolymorphicLeibnizEq(args.(0),args.(1),args.(2))
-      else if eq_gr (IndRef ind) glob_identity then
-	Some (build_coq_identity_data()),hdapp,
-	PolymorphicLeibnizEq(args.(0),args.(1),args.(2))
-      else if eq_gr (IndRef ind) glob_jmeq then
-	Some (build_coq_jmeq_data()),hdapp,
-	HeterogenousEq(args.(0),args.(1),args.(2),args.(3))
-      else
-        let (mib,mip) = Global.lookup_inductive ind in
-        let constr_types = mip.mind_nf_lc in
-        let nconstr = Array.length mip.mind_consnames in
-	if Int.equal nconstr 1 then
-          if is_matching coq_refl_leibniz1_pattern constr_types.(0) then
-	    None, hdapp, MonomorphicLeibnizEq(args.(0),args.(1))
-	  else if is_matching coq_refl_leibniz2_pattern constr_types.(0) then
-	    None, hdapp, PolymorphicLeibnizEq(args.(0),args.(1),args.(2))
-	  else if is_matching coq_refl_jm_pattern constr_types.(0) then
-	    None, hdapp, HeterogenousEq(args.(0),args.(1),args.(2),args.(3))
-	  else raise NoEquationFound
-        else raise NoEquationFound
-    | _ -> raise NoEquationFound
+  try
+    (Some (Coqlib.find_equality (Some hdapp)).eq_data, hdapp,
+     PolymorphicLeibnizEq(args.(0),args.(1),args.(2)))
+  with Not_found ->
+    (match kind_of_term hdapp with
+      | Ind ind ->
+	if eq_gr (IndRef ind) Std.glob_jmeq then
+	  Some (Std.build_coq_jmeq_data()),hdapp,
+	  HeterogenousEq(args.(0),args.(1),args.(2),args.(3))
+	else
+          let (mib,mip) = Global.lookup_inductive ind in
+          let constr_types = mip.mind_nf_lc in
+          let nconstr = Array.length mip.mind_consnames in
+	  if Int.equal nconstr 1 then
+            if is_matching coq_refl_leibniz1_pattern constr_types.(0) then
+	      None, hdapp, MonomorphicLeibnizEq(args.(0),args.(1))
+	    else if is_matching coq_refl_leibniz2_pattern constr_types.(0) then
+	      None, hdapp, PolymorphicLeibnizEq(args.(0),args.(1),args.(2))
+	    else if is_matching coq_refl_jm_pattern constr_types.(0) then
+	      None, hdapp, HeterogenousEq(args.(0),args.(1),args.(2),args.(3))
+	    else raise NoEquationFound
+            else raise NoEquationFound
+      | _ -> raise NoEquationFound)
 
 let is_inductive_equality ind =
   let (mib,mip) = Global.lookup_inductive ind in
@@ -358,30 +356,17 @@ let rec first_match matcher = function
 
 (*** Equality *)
 
-(* Patterns "(eq ?1 ?2 ?3)" and "(identity ?1 ?2 ?3)" *)
-let coq_eq_pattern_gen eq = lazy PATTERN [ %eq ?X1 ?X2 ?X3 ]
-let coq_eq_pattern = coq_eq_pattern_gen coq_eq_ref
-let coq_identity_pattern = coq_eq_pattern_gen coq_identity_ref
-let coq_jmeq_pattern = lazy PATTERN [ %coq_jmeq_ref ?X1 ?X2 ?X3 ?X4 ]
-
-let match_eq eqn eq_pat =
-  let pat = try Lazy.force eq_pat with _ -> raise PatternMatchingFailure in
-  match matches pat eqn with
-    | [(m1,t);(m2,x);(m3,y)] ->
-	assert (id_eq m1 meta1 && id_eq m2 meta2 && id_eq m3 meta3);
-	PolymorphicLeibnizEq (t,x,y)
-    | [(m1,t);(m2,x);(m3,t');(m4,x')] ->
-        assert (id_eq m1 meta1 && id_eq m2 meta2 && id_eq m3 meta3 && id_eq m4 meta4);
-	HeterogenousEq (t,x,t',x')
-    | _ -> anomaly "match_eq: an eq pattern should match 3 or 4 terms"
-
-let equalities =
-  [coq_eq_pattern, build_coq_eq_data;
-   coq_jmeq_pattern, build_coq_jmeq_data;
-   coq_identity_pattern, build_coq_identity_data]
-
 let find_eq_data eqn = (* fails with PatternMatchingFailure *)
-  first_match (match_eq eqn) equalities
+  let (hd,args) = decompose_app eqn in
+  let jmeq = Coqlib.Std.build_coq_jmeq_data () in
+  match args with
+      [t;x;t';x'] when hd = jmeq.eq -> (jmeq,HeterogenousEq (t,x,t',x'))
+    | [t;x;y] ->
+      (try ((find_equality(Some hd)).eq_data,PolymorphicLeibnizEq (t,x,y))
+       with Not_found -> raise PatternMatchingFailure)
+(*	 error "Cannot find a declared equality for this equation"*)
+    | _ -> anomaly "find_eq_data: an eq pattern should match 3 or 4 terms"
+
 
 let extract_eq_args gl = function
   | MonomorphicLeibnizEq (e1,e2) ->
@@ -407,27 +392,20 @@ let find_this_eq_data_decompose gl eqn =
       error "Don't know what to do with JMeq on arguments not of same type." in
   (lbeq,eq_args)
 
-open Tacmach
-
-let match_eq_nf gls eqn eq_pat =
-  match pf_matches gls (Lazy.force eq_pat) eqn with
-    | [(m1,t);(m2,x);(m3,y)] ->
-        assert (id_eq m1 meta1 && id_eq m2 meta2 && id_eq m3 meta3);
-	(t,pf_whd_betadeltaiota gls x,pf_whd_betadeltaiota gls y)
-    | _ -> anomaly "match_eq: an eq pattern should match 3 terms"
-
-let dest_nf_eq gls eqn =
+let dest_eq eqn =
   try
-    snd (first_match (match_eq_nf gls eqn) equalities)
+    match find_eq_data eqn with
+	(eq,PolymorphicLeibnizEq(t,e1,e2)) -> (eq,t,e1,e2)
+      | _ -> raise PatternMatchingFailure
   with PatternMatchingFailure ->
-    error "Not an equality."
+    error "Cannot find a declared equality for this equation."
 
 (*** Sigma-types *)
 
 (* Patterns "(existS ?1 ?2 ?3 ?4)" and "(existT ?1 ?2 ?3 ?4)" *)
 let coq_ex_pattern_gen ex = lazy PATTERN [ %ex ?X1 ?X2 ?X3 ?X4 ]
 let coq_existT_pattern = coq_ex_pattern_gen coq_existT_ref
-let coq_exist_pattern = coq_ex_pattern_gen coq_exist_ref
+let coq_exist_pattern = coq_ex_pattern_gen Std.coq_exist_ref
 
 let match_sigma ex ex_pat =
   match matches (Lazy.force ex_pat) ex with
@@ -440,9 +418,10 @@ let match_sigma ex ex_pat =
 let find_sigma_data_decompose ex = (* fails with PatternMatchingFailure *)
   first_match (match_sigma ex)
     [coq_existT_pattern, build_sigma_type;
-     coq_exist_pattern, build_sigma]
+     coq_exist_pattern, Std.build_sigma]
 
 (* Pattern "(sig ?1 ?2)" *)
+let coq_sig_ref = Std.coq_sig_ref
 let coq_sig_pattern = lazy PATTERN [ %coq_sig_ref ?X1 ?X2 ]
 
 let match_sigma t =
@@ -465,14 +444,14 @@ let coq_eqdec_inf_pattern =
 let coq_eqdec_inf_rev_pattern =
  lazy PATTERN [ { ~ ?X2 = ?X3 :> ?X1 } + { ?X2 = ?X3 :> ?X1 } ]
 
+let op_or = Std.coq_or_ref
+let op_sum = Std.coq_sumbool_ref
+
 let coq_eqdec_pattern =
- lazy PATTERN [ %coq_or_ref (?X2 = ?X3 :> ?X1) (~ ?X2 = ?X3 :> ?X1) ]
+ lazy PATTERN [ %op_or (?X2 = ?X3 :> ?X1) (~ ?X2 = ?X3 :> ?X1) ]
 
 let coq_eqdec_rev_pattern =
- lazy PATTERN [ %coq_or_ref (~ ?X2 = ?X3 :> ?X1) (?X2 = ?X3 :> ?X1) ]
-
-let op_or = coq_or_ref
-let op_sum = coq_sumbool_ref
+ lazy PATTERN [ %op_or (~ ?X2 = ?X3 :> ?X1) (?X2 = ?X3 :> ?X1) ]
 
 let match_eqdec t =
   let eqonleft,op,subst =
@@ -489,6 +468,7 @@ let match_eqdec t =
   | _ -> anomaly "Unexpected pattern"
 
 (* Patterns "~ ?" and "? -> False" *)
+let coq_False_ref = Std.coq_False_ref
 let coq_not_pattern = lazy PATTERN [ ~ _ ]
 let coq_imp_False_pattern = lazy PATTERN [ _ -> %coq_False_ref ]
 

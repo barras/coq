@@ -327,7 +327,7 @@ let sp_Zle = lazy (evaluable_ref_of_constr "Z.le" coq_Zle)
 let sp_Zgt = lazy (evaluable_ref_of_constr "Z.gt" coq_Zgt)
 let sp_Zge = lazy (evaluable_ref_of_constr "Z.ge" coq_Zge)
 let sp_Zlt = lazy (evaluable_ref_of_constr "Z.lt" coq_Zlt)
-let sp_not = lazy (evaluable_ref_of_constr "not" (lazy (build_coq_not ())))
+let sp_not = lazy (evaluable_ref_of_constr "not" (lazy (Std.build_coq_not ())))
 
 let mk_var v = mkVar (id_of_string v)
 let mk_plus t1 t2 = mkApp (Lazy.force coq_Zplus, [| t1; t2 |])
