@@ -548,13 +548,13 @@ type strategy = Environ.env -> identifier list -> constr -> types ->
 
 let get_rew_rel r = match r.rew_prf with
   | RewPrf (rel, prf) -> rel
-  | RewCast c -> mkApp (Coqlib.build_coq_eq (), [| r.rew_car; r.rew_from; r.rew_to |])
+  | RewCast c -> mkApp (Coqlib.Std.build_coq_eq (), [| r.rew_car; r.rew_from; r.rew_to |])
 
 let get_rew_prf r = match r.rew_prf with
   | RewPrf (rel, prf) -> rel, prf 
   | RewCast c ->
-    let rel = mkApp (Coqlib.build_coq_eq (), [| r.rew_car |]) in
-      rel, mkCast (mkApp (Coqlib.build_coq_eq_refl (), [| r.rew_car; r.rew_from |]),
+    let rel = mkApp (Coqlib.Std.build_coq_eq (), [| r.rew_car |]) in
+      rel, mkCast (mkApp (Coqlib.Std.build_coq_eq_refl (), [| r.rew_car; r.rew_from |]),
 		   c, mkApp (rel, [| r.rew_from; r.rew_to |]))
 
 let resolve_subrelation env avoid car rel prf rel' res =

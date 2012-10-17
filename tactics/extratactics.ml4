@@ -278,14 +278,14 @@ let project_hint pri l2r r =
   let env = Global.env() in
   let c = Globnames.constr_of_global gr in
   let t = Retyping.get_type_of env Evd.empty c in
-  let t =
-    Tacred.reduce_to_quantified_ref env Evd.empty (Lazy.force coq_iff_ref) t in
+  let is_iff iff = List.hd (Coqlib.search_logic (fun l -> eq_constr l.log_iff iff)) in
+  let (logic,t) = Tacred.reduce_to_quantified_symbol env Evd.empty is_iff t in
   let sign,ccl = decompose_prod_assum t in
   let (a,b) = match snd (decompose_app ccl) with
     | [a;b] -> (a,b)
     | _ -> assert false in
   let p =
-    if l2r then build_coq_iff_left_proj () else build_coq_iff_right_proj () in
+    if l2r then logic.log_iff_left else logic.log_iff_right in
   let c = Reductionops.whd_beta Evd.empty (mkApp (c,Termops.extended_rel_vect 0 sign)) in
   let c = it_mkLambda_or_LetIn
     (mkApp (p,[|mkArrow a (lift 1 b);mkArrow b (lift 1 a);c|])) sign in
