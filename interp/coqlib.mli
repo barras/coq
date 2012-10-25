@@ -192,6 +192,7 @@ val build_sigma_set : coq_sigma_data delayed
 val build_coq_eq_data : coq_eq_data delayed
 val build_coq_identity_data : coq_eq_data delayed
 val build_coq_jmeq_data : coq_eq_data delayed
+val build_coq_jmeq_full : coq_equality delayed
 
 val build_coq_eq       : constr delayed (** = [(build_coq_eq_data()).eq] *)
 val build_coq_eq_refl  : constr delayed (** = [(build_coq_eq_data()).refl] *)
