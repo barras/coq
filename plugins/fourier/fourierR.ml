@@ -224,7 +224,7 @@ let ineq1_of_constr (h,t) =
 			   hstrict=false}]
                 |_->assert false)
           | Ind (kn,i) ->
-	      if IndRef(kn,i) = Coqlib.glob_eq then
+	      if IndRef(kn,i) = Coqlib.Std.glob_eq then
 		           let t0= args.(0) in
                            let t1= args.(1) in
                            let t2= args.(2) in
@@ -284,10 +284,10 @@ let constant = Coqlib.gen_constant "Fourier"
 
 (* Standard library *)
 open Coqlib
-let coq_sym_eqT = lazy (build_coq_eq_sym ())
-let coq_False = lazy (build_coq_False ())
-let coq_not = lazy (build_coq_not ())
-let coq_eq = lazy (build_coq_eq ())
+let coq_sym_eqT = lazy (Std.build_coq_eq_sym ())
+let coq_False = lazy (Std.build_coq_False ())
+let coq_not = lazy (Std.build_coq_not ())
+let coq_eq = lazy (Std.build_coq_eq ())
 
 (* Rdefinitions *)
 let constant_real = constant ["Reals";"Rdefinitions"]

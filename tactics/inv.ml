@@ -119,6 +119,7 @@ let make_inv_predicate env sigma indf realargs id status concl =
   (* Now, we can recurse down this list, for each ai,(mkRel k) whether to
      push <Ai>(mkRel k)=ai (when   Ai is closed).
    In any case, we carry along the rest of pairs *)
+  let eqd = Coqlib.find_equality env None in
   let rec build_concl eqns n = function
     | [] -> (it_mkProd concl eqns,n)
     | (ai,(xi,ti))::restlist ->
@@ -128,7 +129,6 @@ let make_inv_predicate env sigma indf realargs id status concl =
           else
 	    make_iterated_tuple env' sigma ai (xi,ti)
 	in
-        let eqd = Coqlib.find_equality None in
         let eqn = applist (eqd.eq_data.eq ,[eqnty;lhs;rhs]) in
 	build_concl ((Anonymous,lift n eqn)::eqns) (n+1) restlist
   in

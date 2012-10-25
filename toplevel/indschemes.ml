@@ -272,15 +272,8 @@ let declare_rewriting_schemes ind =
   end
 
 let declare_congr_scheme ind =
-  if Hipattern.is_equality_type (mkInd ind) then begin
-    if
-      try Coqlib.check_required_library Coqlib.logic_module_name; true
-      with _ -> false
-    then
-      ignore (define_individual_scheme congr_scheme_kind KernelVerbose None ind)
-    else
-      msg_warning (strbrk "Cannot build congruence scheme because eq is not found")
-  end
+  if Hipattern.is_equality_type (mkInd ind) then
+    ignore (define_individual_scheme congr_scheme_kind KernelVerbose None ind)
 
 let declare_sym_scheme ind =
   if Hipattern.is_inductive_equality ind then
@@ -419,7 +412,7 @@ let build_combined_scheme env schemes =
   let ctx, ind, nargs = find_inductive t in
   (* Number of clauses, including the predicates quantification *)
   let prods = nb_prod t - (nargs + 1) in
-  let logic = Coqlib.find_logic None in
+  let logic = Coqlib.find_logic env None in
   let coqand = logic.log_and and coqconj = logic.log_conj in
   let relargs = rel_vect 0 prods in
   let concls = List.rev_map

@@ -15,7 +15,33 @@ open Coqlib
 open Pp
 open Errors
 (*i*)
+(*
+open Term
+open Std
+let prop_logic = {
+  log_False = build_coq_False();
+  log_True = build_coq_True();
+  log_I = build_coq_I();
+  log_bottom_sort = Prop Null;
+  log_not = build_coq_not();
+  log_and = build_coq_and();
+  log_conj = build_coq_conj();
+  log_iff = build_coq_iff();
+  log_iff_left = build_coq_iff_left_proj();
+  log_iff_right = build_coq_iff_right_proj();
+  log_or = build_coq_or();
+  log_ex = build_coq_ex()
+}
 
+let prop_eq = {
+  eq_logic = prop_logic;
+  eq_data = build_coq_eq_data();
+  eq_inv = build_coq_inversion_eq_data }
+
+let _ =
+  Coqlib.declare_logic ~default:true InProp prop_logic;
+  Coqlib.declare_equality ~default:true (build_coq_eq()) prop_eq
+*)
 (**********************************************************************)
 (* Parsing via scopes *)
 (* For example, (nat_of_string "3") is <<(S (S (S O)))>> *)

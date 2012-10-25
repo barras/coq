@@ -278,7 +278,6 @@ Ltac elim_ind p := elim_tac ltac:(fun p el => induction p using el) p.
 Lemma solution_left A (B : A -> Type) (t : A) :
   B t -> (forall x, x = t -> B x).
 Proof. intros; subst; assumption. Defined.
-
 Lemma solution_right A (B : A -> Type) (t : A) :
   B t -> (forall x, t = x -> B x).
 Proof. intros; subst; assumption. Defined.
