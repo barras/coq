@@ -359,15 +359,17 @@ let rec first_match matcher = function
 
 let find_eq_data eqn = (* fails with PatternMatchingFailure *)
   let (hd,args) = decompose_app eqn in
-(*TODO: restore jmeq
-  let jmeq = Coqlib.Std.build_coq_jmeq_data () in*)
   match args with
-(*      [t;x;t';x'] when hd = jmeq.eq -> (jmeq,HeterogenousEq (t,x,t',x'))*)
+      [t;x;t';x'] ->
+	let jmeq =
+	  try Coqlib.Std.build_coq_jmeq_full ()
+	  with Not_found -> raise PatternMatchingFailure in
+	if eq_constr hd jmeq.eq_data.eq then (jmeq,HeterogenousEq (t,x,t',x'))
+	else raise PatternMatchingFailure
     | [t;x;y] ->
       (try (find_equality (Global.env()) (Some hd),PolymorphicLeibnizEq (t,x,y))
        with Not_found -> raise PatternMatchingFailure)
-(*	 error "Cannot find a declared equality for this equation"*)
-    | _ -> anomaly "find_eq_data: an eq pattern should match 3 or 4 terms"
+    | _ -> raise PatternMatchingFailure
 
 
 let extract_eq_args gl = function

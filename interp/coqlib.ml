@@ -443,6 +443,69 @@ let build_sigma () =
     intro = init_constant ["Specif"] "exist";
     typ = init_constant ["Specif"] "sig" }
 
+
+(* The False proposition *)
+let coq_False  = lazy_init_constant ["Logic"] "False"
+
+(* The True proposition and its unique proof *)
+let coq_True   = lazy_init_constant ["Logic"] "True"
+let coq_I      = lazy_init_constant ["Logic"] "I"
+
+(* Connectives *)
+let coq_not = lazy_init_constant ["Logic"] "not"
+let coq_and = lazy_init_constant ["Logic"] "and"
+let coq_conj = lazy_init_constant ["Logic"] "conj"
+let coq_or = lazy_init_constant ["Logic"] "or"
+let coq_ex = lazy_init_constant ["Logic"] "ex"
+let coq_iff = lazy_init_constant ["Logic"] "iff"
+
+let coq_iff_left_proj  = lazy_init_constant ["Logic"] "proj1"
+let coq_iff_right_proj = lazy_init_constant ["Logic"] "proj2"
+
+let build_coq_True ()  = Lazy.force coq_True
+let build_coq_I ()     = Lazy.force coq_I
+
+let build_coq_False () = Lazy.force coq_False
+let build_coq_not ()   = Lazy.force coq_not
+
+let build_coq_and ()   = Lazy.force coq_and
+let build_coq_conj ()  = Lazy.force coq_conj
+let build_coq_iff ()   = Lazy.force coq_iff
+
+let build_coq_iff_left_proj ()  = Lazy.force coq_iff_left_proj
+let build_coq_iff_right_proj () = Lazy.force coq_iff_right_proj
+
+let build_coq_or ()    = Lazy.force coq_or
+let build_coq_ex ()    = Lazy.force coq_ex
+
+let coq_eq_ref      = lazy (init_reference ["Logic"] "eq")
+let coq_identity_ref = lazy (init_reference ["Datatypes"] "identity")
+let coq_jmeq_ref     = lazy (gen_reference "Coqlib" ["Logic";"JMeq"] "JMeq")
+let coq_eq_true_ref = lazy (gen_reference "Coqlib" ["Init";"Datatypes"] "eq_true")
+let coq_existS_ref  = lazy (anomaly "use coq_existT_ref")
+let coq_exist_ref  = lazy (init_reference ["Specif"] "exist")
+let coq_not_ref     = lazy (init_reference ["Logic"] "not")
+let coq_False_ref   = lazy (init_reference ["Logic"] "False")
+let coq_sumbool_ref = lazy (init_reference ["Specif"] "sumbool")
+let coq_sig_ref = lazy (init_reference ["Specif"] "sig")
+let coq_or_ref     = lazy (init_reference ["Logic"] "or")
+let coq_iff_ref    = lazy (init_reference ["Logic"] "iff")
+
+let prop_logic() = {
+  log_False = build_coq_False();
+  log_True = build_coq_True();
+  log_I = build_coq_I();
+  log_bottom_sort = Prop Null;
+  log_not = build_coq_not();
+  log_and = build_coq_and();
+  log_conj = build_coq_conj();
+  log_iff = build_coq_iff();
+  log_iff_left = build_coq_iff_left_proj();
+  log_iff_right = build_coq_iff_right_proj();
+  log_or = build_coq_or();
+  log_ex = build_coq_ex()
+}
+
 (** Equality *)
 let eq_kn = make_kn logic_module (id_of_string "eq")
 let glob_eq = IndRef (eq_kn,0)
@@ -544,6 +607,11 @@ let build_coq_inversion_jmeq_data () =
   inv_congr = Lazy.force coq_jmeq_congr_canonical }
 
 
+let build_coq_jmeq_full () =
+  { eq_logic = prop_logic();
+    eq_data = build_coq_jmeq_data();
+    eq_inv = build_coq_inversion_jmeq_data }
+
 (* Equality to true *)
 let coq_eq_true_eq = lazy_init_constant ["Datatypes"] "eq_true"
 let coq_eq_true_ind = lazy_init_constant ["Datatypes"] "eq_true_ind"
@@ -557,54 +625,6 @@ let build_coq_inversion_eq_true_data () =
   inv_congr = Lazy.force coq_eq_true_congr }
 
 
-
-
-(* The False proposition *)
-let coq_False  = lazy_init_constant ["Logic"] "False"
-
-(* The True proposition and its unique proof *)
-let coq_True   = lazy_init_constant ["Logic"] "True"
-let coq_I      = lazy_init_constant ["Logic"] "I"
-
-(* Connectives *)
-let coq_not = lazy_init_constant ["Logic"] "not"
-let coq_and = lazy_init_constant ["Logic"] "and"
-let coq_conj = lazy_init_constant ["Logic"] "conj"
-let coq_or = lazy_init_constant ["Logic"] "or"
-let coq_ex = lazy_init_constant ["Logic"] "ex"
-let coq_iff = lazy_init_constant ["Logic"] "iff"
-
-let coq_iff_left_proj  = lazy_init_constant ["Logic"] "proj1"
-let coq_iff_right_proj = lazy_init_constant ["Logic"] "proj2"
-
-let build_coq_True ()  = Lazy.force coq_True
-let build_coq_I ()     = Lazy.force coq_I
-
-let build_coq_False () = Lazy.force coq_False
-let build_coq_not ()   = Lazy.force coq_not
-
-let build_coq_and ()   = Lazy.force coq_and
-let build_coq_conj ()  = Lazy.force coq_conj
-let build_coq_iff ()   = Lazy.force coq_iff
-
-let build_coq_iff_left_proj ()  = Lazy.force coq_iff_left_proj
-let build_coq_iff_right_proj () = Lazy.force coq_iff_right_proj
-
-let build_coq_or ()    = Lazy.force coq_or
-let build_coq_ex ()    = Lazy.force coq_ex
-
-let coq_eq_ref      = lazy (init_reference ["Logic"] "eq")
-let coq_identity_ref = lazy (init_reference ["Datatypes"] "identity")
-let coq_jmeq_ref     = lazy (gen_reference "Coqlib" ["Logic";"JMeq"] "JMeq")
-let coq_eq_true_ref = lazy (gen_reference "Coqlib" ["Init";"Datatypes"] "eq_true")
-let coq_existS_ref  = lazy (anomaly "use coq_existT_ref")
-let coq_exist_ref  = lazy (init_reference ["Specif"] "exist")
-let coq_not_ref     = lazy (init_reference ["Logic"] "not")
-let coq_False_ref   = lazy (init_reference ["Logic"] "False")
-let coq_sumbool_ref = lazy (init_reference ["Specif"] "sumbool")
-let coq_sig_ref = lazy (init_reference ["Specif"] "sig")
-let coq_or_ref     = lazy (init_reference ["Logic"] "or")
-let coq_iff_ref    = lazy (init_reference ["Logic"] "iff")
 
 end
 
