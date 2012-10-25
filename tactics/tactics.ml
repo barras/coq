@@ -3401,7 +3401,7 @@ let symmetry_red allowred gl =
   | Some eq_data,_,_ ->
       tclTHEN
         (convert_concl_no_check concl DEFAULTcast)
-      (apply eq_data.sym) gl
+      (apply eq_data.eq_data.sym) gl
   | None,eq,eq_kind -> prove_symmetry eq eq_kind gl
 
 let symmetry gl =
@@ -3477,8 +3477,8 @@ let transitivity_red allowred t gl =
       tclTHEN
         (convert_concl_no_check concl DEFAULTcast)
         (match t with
-	 | None -> eapply eq_data.trans
-	 | Some t -> apply_list [eq_data.trans;t]) gl
+	 | None -> eapply eq_data.eq_data.trans
+	 | Some t -> apply_list [eq_data.eq_data.trans;t]) gl
   | None,eq,eq_kind ->
       match t with
       | None -> error "etransitivity not supported for this relation."

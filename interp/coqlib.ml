@@ -15,6 +15,7 @@ open Libnames
 open Globnames
 open Nametab
 open Smartlocate
+open Summary
 
 (************************************************************************)
 (* Generic functions to find Coq objects *)
@@ -81,6 +82,236 @@ let check_required_library d =
       error ("Library "^(string_of_dirpath dir)^" has to be required first.")
 
 (************************************************************************)
+
+type coq_logic = {
+  (** The False proposition *)
+  log_False : constr;
+
+  (** The True proposition and its unique proof *)
+  log_True : constr;
+  log_I : constr;
+
+  (** The "minimal sort" containing both True and False *)
+  log_bottom_sort : sorts;
+
+  (** Negation *)
+  log_not : constr;
+
+  (** Conjunction *)
+  log_and : constr;
+  log_conj : constr;
+  log_iff : constr;
+  log_iff_left : constr;
+  log_iff_right : constr;
+
+  (** Disjunction *)
+  log_or : constr;
+
+  (** Existential quantifier *)
+  log_ex : constr
+}
+
+type logic_id = sorts
+
+let logic_table = ref []
+let default_logic = ref None
+
+let declare_logic ?(default=false) lid logic =
+  logic_table := (lid,logic)::List.remove_assoc lid !logic_table;
+  (* Better have a logic at hand: *)
+  if default || !default_logic=None then default_logic := Some logic
+
+let find_logic lid =
+  match lid, !default_logic with
+      None, Some l -> l
+    | None, _ -> error "No default logic have been declared"
+    | Some lid, _ ->
+      (try List.assoc lid !logic_table
+       with Not_found -> error "Could not find the specified logic")
+
+let search_logic found =
+  CList.map_filter
+    (fun (_,l) -> if found l then Some l else None)
+    !logic_table
+
+
+(* Equalities *)
+type coq_eq_data = {
+  eq   : constr;
+  ind  : constr;
+  refl : constr;
+  sym  : constr;
+  trans: constr;
+  congr: constr }
+
+(* Data needed for discriminate and injection *)
+type coq_inversion_data = {
+  inv_eq   : constr; (* : forall params, t -> Prop *)
+  inv_ind  : constr; (* : forall params P y, eq params y -> P y *)
+  inv_congr: constr  (* : forall params B (f:t->B) y, eq params y -> f c=f y *)
+}
+
+
+type coq_equality = {
+  eq_logic : coq_logic;
+  eq_data : coq_eq_data;
+  eq_inv : coq_inversion_data delayed
+}
+
+(** Equalities are identified by the connective (eq,identity,etc.) *)
+type equality_id = constr
+
+
+let equality_table = ref []
+let default_equality = ref None
+(*
+let find_equality eid =
+  match eid, !default_equality with
+      None, Some l -> l
+    | None, _ -> error "No default equality have been declared"
+    | Some eid, _ ->
+      (try List.assoc eid !equality_table
+       with Not_found -> error "Could not find the specified equality")
+*)
+open Evarutil
+open Typeclasses
+
+let logic_info = lazy
+  (let cls = coq_reference "find_equality" ["Init";"LogicClasses"] "full_logic" in
+   let cl = Typeclasses.class_info cls in
+  let cl_ctxt = snd cl.cl_context in
+  (cls,cl_ctxt))
+
+let find_logic env eid =
+  (* Find data about the 'full_eq_logic' class *)
+  let (cls,cl_ctxt) = Lazy.force logic_info in
+  (* Generate pattern (full_logic _ _ ... _) *)
+  let (evd,inst,_) =
+    evar_instance_of_context
+      Evd.empty (Environ.named_context_val env) cl_ctxt in
+  let pb = mkApp(constr_of_global cls,inst) in
+  (* If given, try to define the evar corresponding to the 'X' arg *)
+  let evd =
+    match eid with
+	Some k ->
+	  (try Evarconv.the_conv_x env inst.(0) (mkSort k) evd
+	   with Reduction.NotConvertible -> raise Not_found)
+      | None -> evd in
+  (* Perform the proof search. We drop the solution (which contains no information).
+     We are only interested in solving the evars argument of full_eq_logic. *)
+  let (evd,_sol) = resolve_one_typeclass env evd pb in
+  (* If some evars remained unsolved, then fail. Is it necessary ? *)
+  if Evd.has_undefined evd then raise Not_found;
+  let args = Array.map (nf_evar evd) inst in
+  (* Building the structure out of the raw array of arguments. *)
+  match args with
+      [|kind; _logic;
+	tr; fa; tkind; iff; conj; disj; neg; i; ifflr; iffrl; conjI; _propositional;
+        ex; _fo_logic |] ->
+      let tkind =
+	if isSort tkind then destSort tkind else
+	  error "Instance of coq_full_logic expects a sort at field trivial_kind." in
+      {log_False=fa;log_True=tr;log_I=i;
+       log_bottom_sort=tkind; log_not=neg; log_and=conj; log_conj=conjI;
+       log_iff=iff; log_iff_left=ifflr; log_iff_right=iffrl; log_or=disj;
+       log_ex=ex }
+    | _ -> anomaly "Coqlib.find_logic: typeclass coq_full_logic has wrong arity"
+
+
+(*
+let typeclass_search (clslib,cls) =
+  let clsrf = coq_reference ("find_class("^cls^")") clslib cls in
+  let cl = Typeclasses.class_info cls in
+  let cl_ctxt = snd cl.cl_context in
+  let (_,lid) = Sign.fold_rel_context
+    (fun (na,b,_) (n,l) ->
+      match (na,b) with
+	| _,Some _ -> (n,l)
+	| Anonymous,None -> (n+1,l)
+	| Name id,None -> (n+1,(string_of_id id,n))) cl_ctxt ~init:(0,[]) in
+  if labels <> lid then
+    anomaly ("Class '"^cls^"' does not have the expected parameters.");
+  (cl_ctxt,lid)
+  let eqpos =
+    (* !!! we assume there is no let... *)
+    try List.index (Name(id_of_string "eq"))
+	  (List.rev(List.map pi1 cl_ctxt)) - 1
+    with Not_found -> anomaly "Class full_eq_logic should have an argument named 'eq'." in
+*)
+
+
+(* Lazily compute relevant info about the full_eq_logic typeclass *)
+let full_eq_logic_info = lazy
+  (let cls = coq_reference "find_equality" ["Init";"LogicClasses"] "full_eq_logic" in
+   let cl = Typeclasses.class_info cls in
+  let cl_ctxt = snd cl.cl_context in
+  let eqpos =
+    (* !!! we assume there is no let... *)
+    try List.index (Name(id_of_string "eq"))
+	  (List.rev(List.map pi1 cl_ctxt)) - 1
+    with Not_found ->
+      anomaly "Class full_eq_logic should have an argument named 'eq'." in
+  (cls,cl_ctxt,eqpos))
+
+let find_equality env eid =
+  (* Find data about the 'full_eq_logic' class *)
+  let (cls,cl_ctxt,eqpos) = Lazy.force full_eq_logic_info in
+  (* Generate pattern (full_eq_logic _ _ ... _) *)
+  let (evd,inst,_) =
+    evar_instance_of_context
+      Evd.empty (Environ.named_context_val env) cl_ctxt in
+  let pb = mkApp(constr_of_global cls,inst) in
+  (* If given, try to define the evar corresponding to the 'eq' arg
+     (position 16) *)
+  let evd =
+    match eid with
+	Some eq ->
+	  (try Evarconv.the_conv_x env inst.(eqpos) eq evd
+	   with Reduction.NotConvertible -> raise Not_found)
+      | None -> evd in
+  (* Perform the proof search. We drop the solution (which contains no information).
+     We are only interested in solving the evars argument of full_eq_logic. *)
+  let (evd,_sol) = resolve_one_typeclass env evd pb in
+  (* If some evars remained unsolved, then fail. Is it necessary ? *)
+  if Evd.has_undefined evd then raise Not_found;
+  let args = Array.map (nf_evar evd) inst in
+  (* Building the structure out of the raw array of arguments. *)
+  match args with
+      [|kind; _logic;
+	tr; fa; tkind; iff; conj; disj; neg; i; ifflr; iffrl; conjI; _propositional;
+        ex; _fo_logic;
+	eq; refl; sym; trans; _eq_logic|] ->
+      let dummy = mkProp in
+      let tkind =
+	if isSort tkind then destSort tkind else
+	  error "Instance of coq_full_logic expects a sort at field trivial_kind." in
+      {eq_logic={log_False=fa;log_True=tr;log_I=i;
+		 log_bottom_sort=tkind; log_not=neg; log_and=conj; log_conj=conjI;
+		 log_iff=iff; log_iff_left=ifflr; log_iff_right=iffrl; log_or=disj;
+		 log_ex=ex };
+       eq_data={eq=eq;ind=dummy;refl=refl;sym=sym;trans=trans;congr=dummy};
+       eq_inv=(fun()->failwith"find_equality: not implemented")}
+    | _ -> anomaly "Coqlib.find_equality: typeclass coq_full_logic has wrong arity"
+
+let search_equality found =
+  CList.map_filter
+    (fun (_,e) -> if found e then Some e else None)
+    !equality_table
+
+(* TODO declare object *)
+
+let _ =
+  declare_summary "Coqlib configuration" {
+    freeze_function = (fun () ->
+      (!logic_table, !default_logic, !equality_table, !default_equality));
+    unfreeze_function = (fun (lt,dl,et,de) ->
+      logic_table:=lt; default_logic:=dl;
+      equality_table:=et; default_equality:=de);
+    init_function = (fun () ->
+      logic_table:=[]; default_logic:=None;
+      equality_table:=[]; default_equality:=None) }
+
+(************************************************************************)
 (* Specific Coq objects *)
 
 let init_reference dir s = gen_reference "Coqlib" ("Init"::dir) s
@@ -109,9 +340,6 @@ let init_modules = [
   init_dir@["Wf"]
 ]
 
-let logic_module_name = ["Coq";"Init";"Logic"]
-let logic_module = make_dir logic_module_name
-
 let logic_type_module_name = ["Coq";"Init";"Logic_Type"]
 let logic_type_module = make_dir logic_type_module_name
 
@@ -120,9 +348,6 @@ let datatypes_module = make_dir datatypes_module_name
 
 let arith_module_name = ["Coq";"Arith";"Arith"]
 let arith_module = make_dir arith_module_name
-
-let jmeq_module_name = ["Coq";"Logic";"JMeq"]
-let jmeq_module = make_dir jmeq_module_name
 
 (* TODO: temporary hack *)
 let make_kn dir id = Globnames.encode_mind dir id
@@ -156,16 +381,6 @@ let path_of_false = ((bool_kn,0),2)
 let glob_true  = ConstructRef path_of_true
 let glob_false  = ConstructRef path_of_false
 
-(** Equality *)
-let eq_kn = make_kn logic_module (id_of_string "eq")
-let glob_eq = IndRef (eq_kn,0)
-
-let identity_kn = make_kn datatypes_module (id_of_string "identity")
-let glob_identity = IndRef (identity_kn,0)
-
-let jmeq_kn = make_kn jmeq_module (id_of_string "JMeq")
-let glob_jmeq = IndRef (jmeq_kn,0)
-
 type coq_sigma_data = {
   proj1 : constr;
   proj2 : constr;
@@ -183,21 +398,12 @@ let build_bool_type () =
     andb_prop =  init_constant ["Datatypes"] "andb_prop";
     andb_true_intro =  init_constant ["Datatypes"] "andb_true_intro" }
 
-let build_sigma_set () = anomaly "Use build_sigma_type"
-
 let build_sigma_type () =
   { proj1 = init_constant ["Specif"] "projT1";
     proj2 = init_constant ["Specif"] "projT2";
     elim = init_constant ["Specif"] "sigT_rect";
     intro = init_constant ["Specif"] "existT";
     typ = init_constant ["Specif"] "sigT" }
-
-let build_sigma () =
-  { proj1 = init_constant ["Specif"] "proj1_sig";
-    proj2 = init_constant ["Specif"] "proj2_sig";
-    elim = init_constant ["Specif"] "sig_rect";
-    intro = init_constant ["Specif"] "exist";
-    typ = init_constant ["Specif"] "sig" }
 
 let build_prod () =
   { proj1 = init_constant ["Datatypes"] "fst";
@@ -206,24 +412,46 @@ let build_prod () =
     intro = init_constant ["Datatypes"] "pair";
     typ = init_constant ["Datatypes"] "prod" }
 
-(* Equalities *)
-type coq_eq_data = {
-  eq   : constr;
-  ind  : constr;
-  refl : constr;
-  sym  : constr;
-  trans: constr;
-  congr: constr }
-
-(* Data needed for discriminate and injection *)
-type coq_inversion_data = {
-  inv_eq   : constr; (* : forall params, t -> Prop *)
-  inv_ind  : constr; (* : forall params P y, eq params y -> P y *)
-  inv_congr: constr  (* : forall params B (f:t->B) y, eq params y -> f c=f y *)
-}
-
 let lazy_init_constant dir id = lazy (init_constant dir id)
 let lazy_logic_constant dir id = lazy (logic_constant dir id)
+
+
+(* Specif *)
+let coq_sumbool  = lazy_init_constant ["Specif"] "sumbool"
+
+let build_coq_sumbool () = Lazy.force coq_sumbool
+
+(* The following is less readable but does not depend on parsing *)
+let coq_existT_ref  = lazy (init_reference ["Specif"] "existT")
+
+
+
+module Std = struct
+
+let logic_module_name = ["Coq";"Init";"Logic"]
+let logic_module = make_dir logic_module_name
+
+let jmeq_module_name = ["Coq";"Logic";"JMeq"]
+let jmeq_module = make_dir jmeq_module_name
+
+let build_sigma_set () = anomaly "Use build_sigma_type"
+
+let build_sigma () =
+  { proj1 = init_constant ["Specif"] "proj1_sig";
+    proj2 = init_constant ["Specif"] "proj2_sig";
+    elim = init_constant ["Specif"] "sig_rect";
+    intro = init_constant ["Specif"] "exist";
+    typ = init_constant ["Specif"] "sig" }
+
+(** Equality *)
+let eq_kn = make_kn logic_module (id_of_string "eq")
+let glob_eq = IndRef (eq_kn,0)
+
+let identity_kn = make_kn datatypes_module (id_of_string "identity")
+let glob_identity = IndRef (identity_kn,0)
+
+let jmeq_kn = make_kn jmeq_module (id_of_string "JMeq")
+let glob_jmeq = IndRef (jmeq_kn,0)
 
 (* Leibniz equality on Type *)
 
@@ -257,6 +485,33 @@ let build_coq_inversion_eq_data () =
   inv_ind = Lazy.force coq_eq_ind;
   inv_congr = Lazy.force coq_eq_congr_canonical }
 
+
+(* Equality on Type as a Type *)
+let coq_identity_eq = lazy_init_constant ["Datatypes"] "identity"
+let coq_identity_refl = lazy_init_constant ["Datatypes"] "identity_refl"
+let coq_identity_ind = lazy_init_constant ["Datatypes"] "identity_ind"
+let coq_identity_congr = lazy_init_constant ["Logic_Type"] "identity_congr"
+let coq_identity_sym = lazy_init_constant ["Logic_Type"] "identity_sym"
+let coq_identity_trans = lazy_init_constant ["Logic_Type"] "identity_trans"
+let coq_identity_congr_canonical = lazy_init_constant ["Logic_Type"] "identity_congr_canonical_form"
+
+let build_coq_identity_data () =
+  let _ = check_required_library datatypes_module_name in {
+  eq = Lazy.force coq_identity_eq;
+  ind = Lazy.force coq_identity_ind;
+  refl = Lazy.force coq_identity_refl;
+  sym = Lazy.force coq_identity_sym;
+  trans = Lazy.force coq_identity_trans;
+  congr = Lazy.force coq_identity_congr }
+
+let build_coq_inversion_identity_data () =
+  let _ = check_required_library datatypes_module_name in
+  let _ = check_required_library logic_type_module_name in {
+  inv_eq = Lazy.force coq_identity_eq;
+  inv_ind = Lazy.force coq_identity_ind;
+  inv_congr = Lazy.force coq_identity_congr_canonical }
+
+
 (* Heterogenous equality on Type *)
 
 let coq_jmeq_eq = lazy_logic_constant ["JMeq"] "JMeq"
@@ -288,35 +543,6 @@ let build_coq_inversion_jmeq_data () =
   inv_ind = Lazy.force coq_jmeq_ind;
   inv_congr = Lazy.force coq_jmeq_congr_canonical }
 
-(* Specif *)
-let coq_sumbool  = lazy_init_constant ["Specif"] "sumbool"
-
-let build_coq_sumbool () = Lazy.force coq_sumbool
-
-(* Equality on Type as a Type *)
-let coq_identity_eq = lazy_init_constant ["Datatypes"] "identity"
-let coq_identity_refl = lazy_init_constant ["Datatypes"] "identity_refl"
-let coq_identity_ind = lazy_init_constant ["Datatypes"] "identity_ind"
-let coq_identity_congr = lazy_init_constant ["Logic_Type"] "identity_congr"
-let coq_identity_sym = lazy_init_constant ["Logic_Type"] "identity_sym"
-let coq_identity_trans = lazy_init_constant ["Logic_Type"] "identity_trans"
-let coq_identity_congr_canonical = lazy_init_constant ["Logic_Type"] "identity_congr_canonical_form"
-
-let build_coq_identity_data () =
-  let _ = check_required_library datatypes_module_name in {
-  eq = Lazy.force coq_identity_eq;
-  ind = Lazy.force coq_identity_ind;
-  refl = Lazy.force coq_identity_refl;
-  sym = Lazy.force coq_identity_sym;
-  trans = Lazy.force coq_identity_trans;
-  congr = Lazy.force coq_identity_congr }
-
-let build_coq_inversion_identity_data () =
-  let _ = check_required_library datatypes_module_name in
-  let _ = check_required_library logic_type_module_name in {
-  inv_eq = Lazy.force coq_identity_eq;
-  inv_ind = Lazy.force coq_identity_ind;
-  inv_congr = Lazy.force coq_identity_congr_canonical }
 
 (* Equality to true *)
 let coq_eq_true_eq = lazy_init_constant ["Datatypes"] "eq_true"
@@ -329,6 +555,9 @@ let build_coq_inversion_eq_true_data () =
   inv_eq = Lazy.force coq_eq_true_eq;
   inv_ind = Lazy.force coq_eq_true_ind;
   inv_congr = Lazy.force coq_eq_true_congr }
+
+
+
 
 (* The False proposition *)
 let coq_False  = lazy_init_constant ["Logic"] "False"
@@ -348,29 +577,27 @@ let coq_iff = lazy_init_constant ["Logic"] "iff"
 let coq_iff_left_proj  = lazy_init_constant ["Logic"] "proj1"
 let coq_iff_right_proj = lazy_init_constant ["Logic"] "proj2"
 
-(* Runtime part *)
 let build_coq_True ()  = Lazy.force coq_True
 let build_coq_I ()     = Lazy.force coq_I
 
 let build_coq_False () = Lazy.force coq_False
 let build_coq_not ()   = Lazy.force coq_not
+
 let build_coq_and ()   = Lazy.force coq_and
 let build_coq_conj ()  = Lazy.force coq_conj
-let build_coq_or ()    = Lazy.force coq_or
-let build_coq_ex ()    = Lazy.force coq_ex
 let build_coq_iff ()   = Lazy.force coq_iff
 
 let build_coq_iff_left_proj ()  = Lazy.force coq_iff_left_proj
 let build_coq_iff_right_proj () = Lazy.force coq_iff_right_proj
 
+let build_coq_or ()    = Lazy.force coq_or
+let build_coq_ex ()    = Lazy.force coq_ex
 
-(* The following is less readable but does not depend on parsing *)
 let coq_eq_ref      = lazy (init_reference ["Logic"] "eq")
 let coq_identity_ref = lazy (init_reference ["Datatypes"] "identity")
 let coq_jmeq_ref     = lazy (gen_reference "Coqlib" ["Logic";"JMeq"] "JMeq")
 let coq_eq_true_ref = lazy (gen_reference "Coqlib" ["Init";"Datatypes"] "eq_true")
 let coq_existS_ref  = lazy (anomaly "use coq_existT_ref")
-let coq_existT_ref  = lazy (init_reference ["Specif"] "existT")
 let coq_exist_ref  = lazy (init_reference ["Specif"] "exist")
 let coq_not_ref     = lazy (init_reference ["Logic"] "not")
 let coq_False_ref   = lazy (init_reference ["Logic"] "False")
@@ -379,3 +606,65 @@ let coq_sig_ref = lazy (init_reference ["Specif"] "sig")
 let coq_or_ref     = lazy (init_reference ["Logic"] "or")
 let coq_iff_ref    = lazy (init_reference ["Logic"] "iff")
 
+end
+
+(*
+let prop_logic = lazy{
+  log_False = build_coq_False();
+  log_True = build_coq_True();
+  log_I = build_coq_I();
+  log_bottom_sort = Prop Null;
+  log_not = build_coq_not();
+  log_and = build_coq_and();
+  log_conj = build_coq_conj();
+  log_iff = build_coq_iff();
+  log_iff_left = build_coq_iff_left_proj();
+  log_iff_right = build_coq_iff_right_proj();
+  log_or = build_coq_or();
+  log_ex = build_coq_ex()
+}
+
+let type_logic = lazy{
+  log_False = build_coq_False();
+  log_True = build_coq_True();
+  log_I = build_coq_I();
+  log_bottom_sort = Prop Null;
+  log_not = build_coq_not();
+  log_and = build_coq_and();
+  log_conj = build_coq_conj();
+  log_iff = build_coq_iff();
+  log_iff_left = build_coq_iff_left_proj();
+  log_iff_right = build_coq_iff_right_proj();
+  log_or = build_coq_or();
+  log_ex = build_coq_ex()
+}
+
+
+(* Several instances of logic and equalities *)
+type coq_eq_data = {
+  eq   : constr;
+  ind  : constr;
+  refl : constr;
+  sym  : constr;
+  trans: constr;
+  congr: constr }
+
+(* Data needed for discriminate and injection *)
+type coq_inversion_data = {
+  inv_eq   : constr; (* : forall params, t -> Prop *)
+  inv_ind  : constr; (* : forall params P y, eq params y -> P y *)
+  inv_congr: constr  (* : forall params B (f:t->B) y, eq params y -> f c=f y *)
+}
+
+
+type coq_equality = {
+  eq_logic : coq_logic;
+  eq_data : coq_eq_data;
+  eq_inv : coq_inversion_data option
+}
+
+let prop_eq = lazy{
+  eq_logic = Lazy.force prop_logic;
+  eq_data = build_coq_eq_data();
+  eq_inv = Some (build_coq_inv_data()) }
+*)

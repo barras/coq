@@ -359,6 +359,19 @@ let e_new_evar evdref env ?(src=(Loc.ghost,Evar_kinds.InternalHole)) ?filter ?ca
   evdref := evd';
   ev
 
+let evar_instance_of_context evd hyps ctxt =
+  let evinst = Sign.instance_from_named_context (named_context_of_val hyps) in
+  let push (na,bd,ty) (evd,subst,inst) =
+    match bd with
+	Some b -> (evd,substl subst b::subst, inst)
+      | None ->
+	let (evd',ev) = new_pure_evar evd hyps (substl subst ty) in
+	let ev = mkEvar(ev,evinst) in
+	(evd',ev::subst, ev::inst) in
+  let (evd,subst,inst) =
+    Sign.fold_rel_context push ctxt ~init:(evd,[],[]) in
+  (evd, Array.of_list(List.rev inst), subst)
+
 (*------------------------------------*
  * Restricting existing evars         *
  *------------------------------------*)

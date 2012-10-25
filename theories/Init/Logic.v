@@ -9,6 +9,7 @@
 Set Implicit Arguments.
 
 Require Export Notations.
+Require Import LogicClasses.
 
 Notation "A -> B" := (forall (_ : A), B) : type_scope.
 
@@ -93,6 +94,7 @@ Theorem iff_sym : forall A B:Prop, (A <-> B) -> (B <-> A).
 End Equivalence.
 
 Hint Unfold iff: extcore.
+
 
 (** Backward direction of the equivalences above does not need assumptions *)
 
@@ -202,6 +204,15 @@ Proof.
   intros; split; intros [Hl Hr]; (split; intros; [ apply Hl | apply Hr]); assumption.
 Qed.
 
+
+Global Instance prop_logic : logic_kind Prop := fun x => x.
+Global Instance prop_propositional : propositional_logic
+  True False Prop iff and or not
+  I
+  (fun A B => @proj1 (A->B) (B->A)) (fun A B:Prop => @proj2 (A->B)(B->A))
+  conj.
+(*Instance prop_is_dflt : default_logic := {|log:=prop_logic|}.*)
+
 (** [(IF_then_else P Q R)], written [IF P then Q else R] denotes
     either [P] and [Q], or [~P] and [Q] *)
 
@@ -270,6 +281,8 @@ Section universal_quantification.
   Qed.
 
 End universal_quantification.
+
+Global Instance prop_fo_logic : first_order_logic ex.
 
 (** * Equality *)
 
@@ -415,6 +428,10 @@ Theorem f_equal5 :
 Proof.
   destruct 1; destruct 1; destruct 1; destruct 1; destruct 1; reflexivity.
 Qed.
+
+Global Instance prop_eq_logic : equational_logic (@eq) (@eq_refl) (@eq_sym) (@eq_trans).
+
+Global Instance prop_full_eq_logic : full_eq_logic prop_propositional prop_fo_logic prop_eq_logic.
 
 (* Aliases *)
 

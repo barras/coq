@@ -449,7 +449,7 @@ let multi_replace clause c2 c1 unsafe try_prove_eq_opt gl =
   let t1 = pf_apply get_type_of gl c1
   and t2 = pf_apply get_type_of gl c2 in
   if unsafe or (pf_conv_x gl t1 t2) then
-    let {eq_data=eq} = Coqlib.find_equality None in
+    let {eq_data=eq} = Coqlib.find_equality (pf_env gl) None in
     let equ = applist (eq.eq, [t1;c1;c2]) in
     tclTHENS (assert_as false None equ)
       [onLastHypId (fun id ->
@@ -678,7 +678,7 @@ let descend_then sigma env head dirn =
    constructs a case-split on [headval], with the [dirn]-th branch
    giving [True], and all the rest giving False. *)
 
-let construct_discriminator sigma env dirn c sort =
+let construct_discriminator logic sigma env dirn c sort =
   let IndType(indf,_) =
     try find_rectype env sigma (get_type_of env sigma c)
     with Not_found ->
@@ -692,25 +692,24 @@ let construct_discriminator sigma env dirn c sort =
 		 dependent types.") in
   let (ind,_) = dest_ind_family indf in
   let (mib,mip) = lookup_mind_specif env ind in
-  let log = Coqlib.find_logic None in
   let deparsign = make_arity_signature env true indf in
-  let p = it_mkLambda_or_LetIn (mkSort log.log_bottom_sort) deparsign in
+  let p = it_mkLambda_or_LetIn (mkSort logic.log_bottom_sort) deparsign in
   let cstrs = get_constructors env indf in
   let build_branch i =
-    let endpt = if Int.equal i dirn then log.log_True else log.log_False in
+    let endpt = if Int.equal i dirn then logic.log_True else logic.log_False in
     it_mkLambda_or_LetIn endpt cstrs.(i-1).cs_args in
   let brl =
     List.map build_branch(List.interval 1 (Array.length mip.mind_consnames)) in
   let ci = make_case_info env ind RegularStyle in
   mkCase (ci, p, c, Array.of_list brl)
 
-let rec build_discriminator sigma env dirn c sort = function
-  | [] -> construct_discriminator sigma env dirn c sort
+let rec build_discriminator logic sigma env dirn c sort = function
+  | [] -> construct_discriminator logic sigma env dirn c sort
   | ((sp,cnum),argnum)::l ->
       let (cnum_nlams,cnum_env,kont) = descend_then sigma env c cnum in
       let newc = mkRel(cnum_nlams-argnum) in
-      let subval = build_discriminator sigma cnum_env dirn newc sort l  in
-      kont subval (build_coq_False (),mkSort (Prop Null))
+      let subval = build_discriminator logic sigma cnum_env dirn newc sort l  in
+      kont subval (logic.log_False,mkSort logic.log_bottom_sort)
 
 (* Note: discrimination could be more clever: if some elimination is
    not allowed because of a large impredicative constructor in the
@@ -749,10 +748,10 @@ let ind_scheme_of_eq lbeq =
 
 
 let discrimination_pf e (t,t1,t2) discriminator lbeq =
-  let logic = Coqlib.find_logic None in
+  let logic = lbeq.eq_logic in
   let i           = logic.log_I in
   let absurd_term = logic.log_False in
-  let eq_elim     = ind_scheme_of_eq lbeq in
+  let eq_elim     = ind_scheme_of_eq lbeq.eq_data in
   (applist (eq_elim, [t;t1;mkNamedLambda e t discriminator;i;t2]), absurd_term)
 
 let eq_baseid = id_of_string "e"
@@ -769,8 +768,9 @@ let apply_on_clause (f,t) clause =
 let discr_positions env sigma (lbeq,eqn,(t,t1,t2)) eq_clause cpath dirn sort =
   let e = next_ident_away eq_baseid (ids_of_context env) in
   let e_env = push_named (e,None,t) env in
+  let log = lbeq.eq_logic in
   let discriminator =
-    build_discriminator sigma e_env dirn (mkVar e) sort cpath in
+    build_discriminator log sigma e_env dirn (mkVar e) sort cpath in
   let (pf, absurd_term) = discrimination_pf e (t,t1,t2) discriminator lbeq in
   let pf_ty = mkArrow eqn absurd_term in
   let absurd_clause = apply_on_clause (pf,pf_ty) eq_clause in
@@ -1081,7 +1081,7 @@ let inject_at_positions env sigma (eq,_,(t,t1,t2)) eq_clause posns tac =
       (* arbitrarily take t1' as the injector default value *)
       let (injbody,resty) = build_injector sigma e_env t1' (mkVar e) cpath in
       let injfun = mkNamedLambda e t injbody in
-      let pf = applist(eq.congr,[t;resty;injfun;t1;t2]) in
+      let pf = applist(eq.eq_data.congr,[t;resty;injfun;t1;t2]) in
       let pf_typ = get_type_of env sigma pf in
       let inj_clause = apply_on_clause (pf,pf_typ) eq_clause in
       let pf = clenv_value_cast_meta inj_clause in
@@ -1122,7 +1122,7 @@ let injEq ipats (eq,_,(t,t1,t2) as u) eq_clause =
 *)
         try (
 (* fetch the informations of the  pair *)
-        let ceq = eq.eq in
+        let ceq = eq.eq_data.eq in
         let sigTconstr () = (Coqlib.build_sigma_type()).Coqlib.typ in
         let eqTypeDest = fst (destApp t) in
         let _,ar1 = destApp t1 and
@@ -1190,11 +1190,11 @@ let swap_equality_args = function
 
 let swap_equands gls eqn =
   let (lbeq,eq_args) = find_eq_data eqn in
-  applist(lbeq.eq,swap_equality_args eq_args)
+  applist(lbeq.eq_data.eq,swap_equality_args eq_args)
 
 let swapEquandsInConcl gls =
   let (lbeq,eq_args) = find_eq_data (pf_concl gls) in
-  let sym_equal = lbeq.sym in
+  let sym_equal = lbeq.eq_data.sym in
   refine
     (applist(sym_equal,(swap_equality_args eq_args@[Evarutil.mk_new_meta()])))
     gls
@@ -1203,7 +1203,7 @@ let swapEquandsInConcl gls =
 
 let bareRevSubstInConcl lbeq body (t,e1,e2) gls =
   (* find substitution scheme *)
-  let eq_elim = find_elim lbeq.eq (Some false) false None [e1;e2] gls in
+  let eq_elim = find_elim lbeq.eq_data.eq (Some false) false None [e1;e2] gls in
   (* build substitution predicate *)
   let p = lambda_create (pf_env gls) (t,body) in
   (* apply substitution scheme *)
@@ -1390,7 +1390,7 @@ let unfold_body x gl =
 
 
 let restrict_to_declared_eq eq = (* compatibility *)
-  try ignore (find_equality (Some eq))
+  try ignore (find_equality (Global.env()) (Some eq))
   with Not_found ->
     raise PatternMatchingFailure
 
@@ -1488,7 +1488,7 @@ let subst_all ?(flags=default_subst_tactic_flags ()) gl =
   let test (_,c) =
     try
       let lbeq,(_,x,y) = find_eq_data_decompose gl c in
-      if flags.only_leibniz then restrict_to_declared_eq lbeq.eq;
+      if flags.only_leibniz then restrict_to_declared_eq lbeq.eq_data.eq;
       (* J.F.: added to prevent failure on goal containing x=x as an hyp *)
       if eq_constr x y then failwith "caught";
       match kind_of_term x with Var x -> x | _ ->

@@ -116,21 +116,21 @@ type equation_kind =
 exception NoEquationFound
 
 val match_with_equation:
-  constr -> coq_eq_data option * constr * equation_kind
+  constr -> coq_equality option * constr * equation_kind
 
 (***** Destructing patterns bound to some theory *)
 
 (** Match terms [eq A t u], [identity A t u] or [JMeq A t A u] 
    Returns associated lemmas and [A,t,u] or fails PatternMatchingFailure *)
 val find_eq_data_decompose : Proof_type.goal sigma -> constr ->
-      coq_eq_data * (types * constr * constr)
+      coq_equality * (types * constr * constr)
 
 (** Idem but fails with an error message instead of PatternMatchingFailure *)
 val find_this_eq_data_decompose : Proof_type.goal sigma -> constr ->
-      coq_eq_data * (types * constr * constr)
+      coq_equality * (types * constr * constr)
 
 (** A variant that returns more informative structure on the equality found *)
-val find_eq_data : constr -> coq_eq_data * equation_kind
+val find_eq_data : constr -> coq_equality * equation_kind
 
 (** Match a term of the form [(existT A P t p)] 
    Returns associated lemmas and [A,P,t,p] *)
@@ -150,7 +150,7 @@ val match_eqdec : constr -> bool * constr * constr * constr * constr
     (it was supposed to be up to conversion, but the code actual doesn't do it) *)
 open Proof_type
 open Tacmach
-val dest_eq : constr -> (coq_eq_data * constr * constr * constr)
+val dest_eq : constr -> (coq_equality * constr * constr * constr)
 
 (** Match a negation *)
 val is_matching_not : constr -> bool
