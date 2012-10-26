@@ -360,7 +360,8 @@ let e_new_evar evdref env ?(src=(Loc.ghost,Evar_kinds.InternalHole)) ?filter ?ca
   ev
 
 let evar_instance_of_context evd hyps ctxt =
-  let evinst = Sign.instance_from_named_context (named_context_of_val hyps) in
+  let evinst = Array.of_list
+    (List.map (fun (id,_,_) -> mkVar id) (named_context_of_val hyps)) in
   let push (na,bd,ty) (evd,subst,inst) =
     match bd with
 	Some b -> (evd,substl subst b::subst, inst)

@@ -209,7 +209,7 @@ Global Instance prop_logic : logic_kind Prop := fun x => x.
 Global Instance prop_propositional : propositional_logic
   True False Prop iff and or not
   I
-  (fun A B => @proj1 (A->B) (B->A)) (fun A B:Prop => @proj2 (A->B)(B->A))
+  (fun A B (p:iff A B)=> proj1 p) (fun A B (p:iff A B) => proj2 p)
   conj.
 (*Instance prop_is_dflt : default_logic := {|log:=prop_logic|}.*)
 
@@ -429,7 +429,8 @@ Proof.
   destruct 1; destruct 1; destruct 1; destruct 1; destruct 1; reflexivity.
 Qed.
 
-Global Instance prop_eq_logic : equational_logic (@eq) (@eq_refl) (@eq_sym) (@eq_trans).
+Global Instance prop_eq_logic :
+  equational_logic (@eq) (@eq_ind) (@eq_refl) (@eq_sym) (@eq_trans) (@f_equal).
 
 Global Instance prop_full_eq_logic : full_eq_logic prop_propositional prop_fo_logic prop_eq_logic.
 

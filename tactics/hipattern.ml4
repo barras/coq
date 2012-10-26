@@ -245,6 +245,7 @@ let match_with_equation t =
   if not (isApp t) then raise NoEquationFound;
   let (hdapp,args) = destApp t in
   try
+    if Array.length args <> 3 then raise Not_found;
     (Some (Coqlib.find_equality (Global.env()) (Some hdapp)), hdapp,
      PolymorphicLeibnizEq(args.(0),args.(1),args.(2)))
   with Not_found ->
@@ -363,7 +364,7 @@ let find_eq_data eqn = (* fails with PatternMatchingFailure *)
       [t;x;t';x'] ->
 	let jmeq =
 	  try Coqlib.Std.build_coq_jmeq_full ()
-	  with Not_found -> raise PatternMatchingFailure in
+	  with UserError _ -> raise PatternMatchingFailure in
 	if eq_constr hd jmeq.eq_data.eq then (jmeq,HeterogenousEq (t,x,t',x'))
 	else raise PatternMatchingFailure
     | [t;x;y] ->
