@@ -16,6 +16,8 @@ open Globnames
 open Nametab
 open Smartlocate
 open Summary
+open Evarutil
+open Typeclasses
 
 (************************************************************************)
 (* Generic functions to find Coq objects *)
@@ -83,6 +85,7 @@ let check_required_library d =
 
 (************************************************************************)
 
+(** Signature of a logic. Needs to be completed! *)
 type coq_logic = {
   (** The False proposition *)
   log_False : constr;
@@ -113,27 +116,74 @@ type coq_logic = {
 
 type logic_id = sorts
 
-let logic_table = ref []
-let default_logic = ref None
+let pos_in_ctxt label ctxt =
+  let na = Name(id_of_string label) in
+  let ids (id,bd,_) = match bd with None -> Some id | _ -> None in
+  (* List.index is based at 1! *)
+  List.index na (List.rev (CList.map_filter ids ctxt)) - 1
 
-let declare_logic ?(default=false) lid logic =
-  logic_table := (lid,logic)::List.remove_assoc lid !logic_table;
-  (* Better have a logic at hand: *)
-  if default || !default_logic=None then default_logic := Some logic
+let full_logic_info = lazy
+  (let cls = coq_reference "find_equality" ["Init";"LogicClasses"] "full_logic" in
+   let cl = Typeclasses.class_info cls in
+   let cl_ctxt = snd cl.cl_context in
+   let kind_pos = 0 in
+   let build_record args =
+     match args with
+	 [|kind; _logic;
+	   tr; fa; tkind; iff; conj; disj; neg; i; ifflr; iffrl; conjI; _propositional;
+           ex; _fo_logic |] ->
+	   let tkind =
+	     if isSort tkind then destSort tkind else
+	       error "Instance of coq_full_logic expects a sort at field trivial_kind." in
+	   {log_False=fa;log_True=tr;log_I=i;
+	    log_bottom_sort=tkind; log_not=neg; log_and=conj; log_conj=conjI;
+	    log_iff=iff; log_iff_left=ifflr; log_iff_right=iffrl; log_or=disj;
+	    log_ex=ex }
+       | _ -> anomaly "Coqlib.find_logic: typeclass coq_full_logic has wrong arity" in
+   (cls,cl_ctxt,build_record,kind_pos))
 
-let find_logic lid =
-  match lid, !default_logic with
-      None, Some l -> l
-    | None, _ -> error "No default logic have been declared"
-    | Some lid, _ ->
-      (try List.assoc lid !logic_table
-       with Not_found -> error "Could not find the specified logic")
+let find_all_logics () =
+  (* Retrieve data about the 'full_logic' class *)
+  let (cls,cl_ctxt,build_record,kind_pos) = Lazy.force full_logic_info in
+  let inst = Typeclasses.instances cls in
+  let env = Global.env() in
+  let build i =
+    let ty = Retyping.get_type_of env Evd.empty (constr_of_global (instance_impl i)) in
+    build_record (snd (destApp ty)) in
+  List.map build inst
 
 let search_logic found =
   CList.map_filter
-    (fun (_,l) -> if found l then Some l else None)
-    !logic_table
+    (fun l -> if found l then Some l else None)
+    (find_all_logics())
 
+let find_logic env eid =
+  (* Retrieve data about the 'full_logic' class *)
+  let (cls,cl_ctxt,build_record,kind_pos) = Lazy.force full_logic_info in
+  (* Generate pattern (full_logic _ _ ... _) *)
+  let (evd,inst,_) =
+    evar_instance_of_context
+      Evd.empty (Environ.named_context_val env) cl_ctxt in
+  let pb = mkApp(constr_of_global cls,inst) in
+  (* If given, try to define the evar corresponding to the 'X' arg *)
+  let evd =
+    match eid with
+	Some k ->
+	  (try Evarconv.the_conv_x env inst.(kind_pos) (mkSort k) evd
+	   with Reduction.NotConvertible -> raise Not_found)
+      | None -> evd in
+  (* Perform the proof search. We drop the solution (which contains no
+     information anyway).
+     We are only interested in solving the evars argument of full_eq_logic. *)
+  let (evd,_sol) = resolve_one_typeclass env evd pb in
+  (* If some evars remained unsolved, then fail. (Otherwise we may return an eq structure
+     containing evars refering to evd, but this evd is not returned to the caller.) *)
+  if Evd.has_undefined evd then raise Not_found;
+  (* Building the structure out of the raw array of arguments. *)
+  build_record (Array.map (nf_evar evd) inst)
+
+
+(************************************************************************)
 
 (* Equalities *)
 type coq_eq_data = {
@@ -151,7 +201,8 @@ type coq_inversion_data = {
   inv_congr: constr  (* : forall params B (f:t->B) y, eq params y -> f c=f y *)
 }
 
-
+(* Equalities are propositions, so we also need a logic at hand if we want to
+   build compound propositions involving equalities *)
 type coq_equality = {
   eq_logic : coq_logic;
   eq_data : coq_eq_data;
@@ -160,63 +211,6 @@ type coq_equality = {
 
 (** Equalities are identified by the connective (eq,identity,etc.) *)
 type equality_id = constr
-
-
-let equality_table = ref []
-let default_equality = ref None
-(*
-let find_equality eid =
-  match eid, !default_equality with
-      None, Some l -> l
-    | None, _ -> error "No default equality have been declared"
-    | Some eid, _ ->
-      (try List.assoc eid !equality_table
-       with Not_found -> error "Could not find the specified equality")
-*)
-open Evarutil
-open Typeclasses
-
-let logic_info = lazy
-  (let cls = coq_reference "find_equality" ["Init";"LogicClasses"] "full_logic" in
-   let cl = Typeclasses.class_info cls in
-  let cl_ctxt = snd cl.cl_context in
-  (cls,cl_ctxt))
-
-let find_logic env eid =
-  (* Find data about the 'full_eq_logic' class *)
-  let (cls,cl_ctxt) = Lazy.force logic_info in
-  (* Generate pattern (full_logic _ _ ... _) *)
-  let (evd,inst,_) =
-    evar_instance_of_context
-      Evd.empty (Environ.named_context_val env) cl_ctxt in
-  let pb = mkApp(constr_of_global cls,inst) in
-  (* If given, try to define the evar corresponding to the 'X' arg *)
-  let evd =
-    match eid with
-	Some k ->
-	  (try Evarconv.the_conv_x env inst.(0) (mkSort k) evd
-	   with Reduction.NotConvertible -> raise Not_found)
-      | None -> evd in
-  (* Perform the proof search. We drop the solution (which contains no information).
-     We are only interested in solving the evars argument of full_eq_logic. *)
-  let (evd,_sol) = resolve_one_typeclass env evd pb in
-  (* If some evars remained unsolved, then fail. Is it necessary ? *)
-  if Evd.has_undefined evd then raise Not_found;
-  let args = Array.map (nf_evar evd) inst in
-  (* Building the structure out of the raw array of arguments. *)
-  match args with
-      [|kind; _logic;
-	tr; fa; tkind; iff; conj; disj; neg; i; ifflr; iffrl; conjI; _propositional;
-        ex; _fo_logic |] ->
-      let tkind =
-	if isSort tkind then destSort tkind else
-	  error "Instance of coq_full_logic expects a sort at field trivial_kind." in
-      {log_False=fa;log_True=tr;log_I=i;
-       log_bottom_sort=tkind; log_not=neg; log_and=conj; log_conj=conjI;
-       log_iff=iff; log_iff_left=ifflr; log_iff_right=iffrl; log_or=disj;
-       log_ex=ex }
-    | _ -> anomaly "Coqlib.find_logic: typeclass coq_full_logic has wrong arity"
-
 
 (*
 let typeclass_search (clslib,cls) =
@@ -232,30 +226,49 @@ let typeclass_search (clslib,cls) =
   if labels <> lid then
     anomaly ("Class '"^cls^"' does not have the expected parameters.");
   (cl_ctxt,lid)
-  let eqpos =
-    (* !!! we assume there is no let... *)
-    try List.index (Name(id_of_string "eq"))
-	  (List.rev(List.map pi1 cl_ctxt)) - 1
-    with Not_found -> anomaly "Class full_eq_logic should have an argument named 'eq'." in
 *)
-
-
+  
 (* Lazily compute relevant info about the full_eq_logic typeclass *)
 let full_eq_logic_info = lazy
   (let cls = coq_reference "find_equality" ["Init";"LogicClasses"] "full_eq_logic" in
    let cl = Typeclasses.class_info cls in
-  let cl_ctxt = snd cl.cl_context in
-  let eqpos =
-    (* !!! we assume there is no let... *)
-    try List.index (Name(id_of_string "eq"))
-	  (List.rev(List.map pi1 cl_ctxt)) - 1
-    with Not_found ->
-      anomaly "Class full_eq_logic should have an argument named 'eq'." in
-  (cls,cl_ctxt,eqpos))
+   let cl_ctxt = snd cl.cl_context in
+   (* Position of 'eq' within the argument list *)
+   let eqpos =
+     try pos_in_ctxt "eq" cl_ctxt
+     with Not_found -> anomaly "Class full_eq_logic should have an argument named 'eq'." in
+   (* Building the structure from the list of arguments *)
+   let build_record args =
+     match args with
+	 [|kind; _logic;
+	   tr; fa; tkind; iff; conj; disj; neg; i; ifflr; iffrl; conjI; _propositional;
+           ex; _fo_logic;
+	   eq; ind; refl; sym; trans; congr; _eq_logic|] ->
+	   let tkind =
+	     if isSort tkind then destSort tkind else
+	       error "Instance of coq_full_logic expects a sort at field trivial_kind." in
+	   {eq_logic={log_False=fa;log_True=tr;log_I=i;
+		      log_bottom_sort=tkind; log_not=neg; log_and=conj; log_conj=conjI;
+		      log_iff=iff; log_iff_left=ifflr; log_iff_right=iffrl; log_or=disj;
+		      log_ex=ex };
+	    eq_data={eq=eq;ind=ind;refl=refl;sym=sym;trans=trans;congr=congr};
+	    eq_inv=(fun()->failwith"find_equality: not implemented")}
+       | _ -> anomaly "Coqlib.find_equality: typeclass coq_full_logic has wrong arity" in
+   (cls,cl_ctxt,build_record,eqpos))
+
+let find_all_equalities () =
+  (* Retrieve data about the 'full_eq_logic' class *)
+  let (cls,cl_ctxt,build_record,eqpos) = Lazy.force full_eq_logic_info in
+  let inst = Typeclasses.instances cls in
+  let env = Global.env() in
+  let build i =
+    let ty = Retyping.get_type_of env Evd.empty (constr_of_global (instance_impl i)) in
+    build_record (snd(destApp ty)) in
+  List.map build inst
 
 let find_equality env eid =
-  (* Find data about the 'full_eq_logic' class *)
-  let (cls,cl_ctxt,eqpos) = Lazy.force full_eq_logic_info in
+  (* Retrieve data about the 'full_eq_logic' class *)
+  let (cls,cl_ctxt,build_record,eqpos) = Lazy.force full_eq_logic_info in
   (* Generate pattern (full_eq_logic _ _ ... _) *)
   let (evd,inst,_) =
     evar_instance_of_context
@@ -274,42 +287,34 @@ let find_equality env eid =
   let (evd,_sol) = resolve_one_typeclass env evd pb in
   (* If some evars remained unsolved, then fail. Is it necessary ? *)
   if Evd.has_undefined evd then raise Not_found;
-  let args = Array.map (nf_evar evd) inst in
   (* Building the structure out of the raw array of arguments. *)
-  match args with
-      [|kind; _logic;
-	tr; fa; tkind; iff; conj; disj; neg; i; ifflr; iffrl; conjI; _propositional;
-        ex; _fo_logic;
-	eq; refl; sym; trans; _eq_logic|] ->
-      let dummy = mkProp in
-      let tkind =
-	if isSort tkind then destSort tkind else
-	  error "Instance of coq_full_logic expects a sort at field trivial_kind." in
-      {eq_logic={log_False=fa;log_True=tr;log_I=i;
-		 log_bottom_sort=tkind; log_not=neg; log_and=conj; log_conj=conjI;
-		 log_iff=iff; log_iff_left=ifflr; log_iff_right=iffrl; log_or=disj;
-		 log_ex=ex };
-       eq_data={eq=eq;ind=dummy;refl=refl;sym=sym;trans=trans;congr=dummy};
-       eq_inv=(fun()->failwith"find_equality: not implemented")}
-    | _ -> anomaly "Coqlib.find_equality: typeclass coq_full_logic has wrong arity"
+  build_record (Array.map (nf_evar evd) inst)
+
+(* Alternative def, probably much more efficient, but not as general...
+   Also, we may have better control on which instance is tried first. *)
+let find_equality_alt eid =
+  (* Retrieve data about the 'full_eq_logic' class *)
+  let (cls,cl_ctxt,build_record,eqpos) = Lazy.force full_eq_logic_info in
+  let inst = Typeclasses.instances cls in
+  let env = Global.env() in
+  let found =
+    match eid with
+      | None -> (fun _ -> true)
+      | Some eq -> (fun args -> eq_constr args.(eqpos) eq) in
+  let rec find l =
+    match l with
+	[] -> raise Not_found
+      | i::l ->
+	let ty = Retyping.get_type_of env Evd.empty (constr_of_global (instance_impl i)) in
+	let args = snd (destApp ty) in
+	if found args then build_record args else find l in
+  find inst
+
 
 let search_equality found =
   CList.map_filter
-    (fun (_,e) -> if found e then Some e else None)
-    !equality_table
-
-(* TODO declare object *)
-
-let _ =
-  declare_summary "Coqlib configuration" {
-    freeze_function = (fun () ->
-      (!logic_table, !default_logic, !equality_table, !default_equality));
-    unfreeze_function = (fun (lt,dl,et,de) ->
-      logic_table:=lt; default_logic:=dl;
-      equality_table:=et; default_equality:=de);
-    init_function = (fun () ->
-      logic_table:=[]; default_logic:=None;
-      equality_table:=[]; default_equality:=None) }
+    (fun e -> if found e then Some e else None)
+    (find_all_equalities())
 
 (************************************************************************)
 (* Specific Coq objects *)
@@ -627,64 +632,3 @@ let build_coq_inversion_eq_true_data () =
 
 
 end
-
-(*
-let prop_logic = lazy{
-  log_False = build_coq_False();
-  log_True = build_coq_True();
-  log_I = build_coq_I();
-  log_bottom_sort = Prop Null;
-  log_not = build_coq_not();
-  log_and = build_coq_and();
-  log_conj = build_coq_conj();
-  log_iff = build_coq_iff();
-  log_iff_left = build_coq_iff_left_proj();
-  log_iff_right = build_coq_iff_right_proj();
-  log_or = build_coq_or();
-  log_ex = build_coq_ex()
-}
-
-let type_logic = lazy{
-  log_False = build_coq_False();
-  log_True = build_coq_True();
-  log_I = build_coq_I();
-  log_bottom_sort = Prop Null;
-  log_not = build_coq_not();
-  log_and = build_coq_and();
-  log_conj = build_coq_conj();
-  log_iff = build_coq_iff();
-  log_iff_left = build_coq_iff_left_proj();
-  log_iff_right = build_coq_iff_right_proj();
-  log_or = build_coq_or();
-  log_ex = build_coq_ex()
-}
-
-
-(* Several instances of logic and equalities *)
-type coq_eq_data = {
-  eq   : constr;
-  ind  : constr;
-  refl : constr;
-  sym  : constr;
-  trans: constr;
-  congr: constr }
-
-(* Data needed for discriminate and injection *)
-type coq_inversion_data = {
-  inv_eq   : constr; (* : forall params, t -> Prop *)
-  inv_ind  : constr; (* : forall params P y, eq params y -> P y *)
-  inv_congr: constr  (* : forall params B (f:t->B) y, eq params y -> f c=f y *)
-}
-
-
-type coq_equality = {
-  eq_logic : coq_logic;
-  eq_data : coq_eq_data;
-  eq_inv : coq_inversion_data option
-}
-
-let prop_eq = lazy{
-  eq_logic = Lazy.force prop_logic;
-  eq_data = build_coq_eq_data();
-  eq_inv = Some (build_coq_inv_data()) }
-*)
