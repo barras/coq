@@ -169,15 +169,17 @@ type 'a with_instance = instance_flag * 'a
 type 'a with_notation = 'a * decl_notation list
 type 'a with_priority = 'a * int option
 type constructor_expr = (lident * constr_expr) with_coercion
+type path_constructor_expr = lident * (local_binder list * constr_expr * constr_expr)
 type constructor_list_or_record_decl_expr =
-  | Constructors of constructor_expr list
+  | Constructors of constructor_expr list * path_constructor_expr list
   | RecordDecl of lident option * local_decl_expr with_instance with_priority with_notation list
 type inductive_expr =
   lident with_coercion * local_binder list * constr_expr option * inductive_kind *
     constructor_list_or_record_decl_expr
 
 type one_inductive_expr =
-  lident * local_binder list * constr_expr option * constructor_expr list
+  lident * local_binder list * constr_expr option *
+    constructor_expr list * path_constructor_expr list
 
 type module_ast_inl = module_ast Declaremods.annotated
 type module_binder = bool option * lident list * module_ast_inl

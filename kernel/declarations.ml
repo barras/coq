@@ -236,6 +236,14 @@ type inductive_arity =
 | Monomorphic of monomorphic_inductive_arity
 | Polymorphic of polymorphic_arity
 
+type path_constructor = {
+  c1_name : identifier;
+  c1_args : rel_context;
+  c1_inst : constr array;
+  c1_lhs : constr;
+  c1_rhs : constr
+}
+
 type one_inductive_body = {
 
 (* Primitive datas *)
@@ -257,6 +265,9 @@ type one_inductive_body = {
     I1:forall params, U1 ..  In:forall params, Un *)
     mind_user_lc : types array;
 
+(** Higher inductive path constructors *)
+    mind_pathcons : path_constructor array;
+
 (* Derived datas *)
 
  (* Number of expected real arguments of the type (no let, no params) *)
@@ -273,6 +284,7 @@ type one_inductive_body = {
 
  (* Length of the signature of the constructors (with let, w/o params) *)
     mind_consnrealdecls : int array;
+    mind_pconsnrealdecls : int array;
 
  (* Signature of recursive arguments in the constructors *)
     mind_recargs : wf_paths;
@@ -327,14 +339,24 @@ let subst_indarity sub = function
     }
 | Polymorphic s as x -> x
 
+let subst_pathcons sub pc = {
+  c1_name = pc.c1_name;
+  c1_args = map_rel_context (subst_mps sub) pc.c1_args;
+  c1_inst = Array.smartmap (subst_mps sub) pc.c1_inst;
+  c1_lhs = subst_mps sub pc.c1_lhs;
+  c1_rhs = subst_mps sub pc.c1_rhs
+}
+
 let subst_mind_packet sub mbp =
   { mind_consnames = mbp.mind_consnames;
     mind_consnrealdecls = mbp.mind_consnrealdecls;
+    mind_pconsnrealdecls = mbp.mind_pconsnrealdecls;
     mind_typename = mbp.mind_typename;
     mind_nf_lc = Array.smartmap (subst_mps sub) mbp.mind_nf_lc;
     mind_arity_ctxt = subst_rel_context sub mbp.mind_arity_ctxt;
     mind_arity = subst_indarity sub mbp.mind_arity;
     mind_user_lc = Array.smartmap (subst_mps sub) mbp.mind_user_lc;
+    mind_pathcons = Array.smartmap (subst_pathcons sub) mbp.mind_pathcons;
     mind_nrealargs = mbp.mind_nrealargs;
     mind_nrealargs_ctxt = mbp.mind_nrealargs_ctxt;
     mind_kelim = mbp.mind_kelim;

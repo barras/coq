@@ -197,8 +197,10 @@ type 'a miota_args = {
   mcargs  : 'a list;    (* the constructor's arguments *)
   mlf     : 'a array }  (* the branch code vector *)
 
-let reducible_mind_case c = match kind_of_term c with
-  | Construct _ | CoFix _ -> true
+let reducible_mind_case ind c =
+  match kind_of_term c,ind with
+  | Construct (cind,_), Some ind -> eq_ind ind cind (* HIT: runtime check *)
+  | (CoFix _|Construct _),_ -> true
   | _  -> false
 
 let contract_cofix (bodynum,(types,names,bodies as typedbodies)) =
@@ -807,10 +809,12 @@ let whd_betaiota_deltazeta_for_iota_state ts env sigma s =
   let rec whrec s =
     let (t, stack as s) = whd_betaiota_state sigma s in
     match strip_app stack with
-      |args, (Zcase _ :: _ as stack') ->
+      |args, (Zcase (ci,_,_) :: _ as stack') ->
 	let seq = (t,append_stack_app_list args empty_stack) in
 	let t_o,stack_o = whd_betadeltaiota_state_using ts env sigma seq in
-	if reducible_mind_case t_o then whrec (t_o, stack_o@stack') else s
+	if reducible_mind_case (Some ci.ci_ind) t_o
+	then whrec (t_o, stack_o@stack')
+	else s
       |args, (Zfix _ :: _ as stack') ->
 	let seq = (t,append_stack_app_list args empty_stack) in
 	let t_o,stack_o = whd_betadeltaiota_state_using ts env sigma seq in

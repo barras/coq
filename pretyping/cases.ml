@@ -450,11 +450,11 @@ let check_and_adjust_constructor env ind cstrs = function
       if eq_ind ind' ind then
 	(* Check the constructor has the right number of args *)
 	let ci = cstrs.(i-1) in
-	let nb_args_constr = ci.cs_nargs in
+	let nb_args_constr = ci.cs0_nargs in
 	if Int.equal (List.length args) nb_args_constr then pat
 	else
 	  try
-	    let args' = adjust_local_defs loc (args, List.rev ci.cs_args)
+	    let args' = adjust_local_defs loc (args, List.rev ci.cs0_args)
 	    in PatCstr (loc, cstr, args', alias)
 	  with NotAdjustable ->
 	    error_wrong_numarg_constructor_loc loc (Global.env())
@@ -890,7 +890,8 @@ let abstract_predicate env sigma indf cur realargs (names,na) tms ccl =
   let tms = List.fold_right2 (fun par arg tomatch ->
     match kind_of_term par with
     | Rel i -> relocate_index_tomatch (i+n) (destRel arg) tomatch
-    | _ -> tomatch) (realargs@[cur]) (extended_rel_list 0 sign)
+    | _ -> tomatch)
+    (realargs@[cur]) (Array.to_list(Sign.args_of_rel_context 0 sign))
        (lift_tomatch_stack n tms) in
   (* Pred is already dependent in the current term to match (if      *)
   (* (na<>Anonymous) and its realargs; we just need to adjust it to  *)
@@ -972,12 +973,12 @@ let specialize_predicate newtomatchs (names,depna) arsign cs tms ccl =
   (* We adjust pred st: gamma, x1..xn |- PI [X,x:I(X)]. PI tms. ccl' *)
   (* so that x can later be instantiated by Ci(x1..xn) *)
   (* and X by the realargs for Ci *)
-  let n = cs.cs_nargs in
+  let n = cs.cs0_nargs in
   let ccl' = liftn_predicate n (k+1) ccl tms in
   (* We prepare the substitution of X and x:I(X) *)
   let realargsi =
     if not (Int.equal nrealargs 0) then
-      adjust_subst_to_rel_context arsign (Array.to_list cs.cs_concl_realargs)
+      adjust_subst_to_rel_context arsign (Array.to_list cs.cs0_concl_realargs)
     else
       [] in
   let copti = match depna with
@@ -1046,7 +1047,7 @@ let rec ungeneralize n ng body =
   | _ -> assert false
 
 let ungeneralize_branch n k (sign,body) cs =
-  (sign,ungeneralize (n+cs.cs_nargs) k body)
+  (sign,ungeneralize (n+cs.cs0_nargs) k body)
 
 let postprocess_dependencies evd tocheck brs tomatch pred deps cs =
   let rec aux k brs tomatch pred tocheck deps = match deps, tomatch with
@@ -1103,7 +1104,7 @@ let group_equations pb ind current cstrs mat =
 	   | PatVar (_,name) ->
 	       (* This is a default clause that we expand *)
 	       for i=1 to Array.length cstrs do
-		 let args = make_anonymous_patvars cstrs.(i-1).cs_nargs in
+		 let args = make_anonymous_patvars cstrs.(i-1).cs0_nargs in
 		 brs.(i-1) <- (args, name, rest) :: brs.(i-1)
 	       done
 	   | PatCstr (loc,((_,i)),args,name) ->
@@ -1143,12 +1144,12 @@ let build_leaf pb =
 let build_branch current realargs deps (realnames,curname) pb arsign eqns const_info =
   (* We remember that we descend through constructor C *)
   let history =
-    push_history_pattern const_info.cs_nargs const_info.cs_cstr pb.history in
+    push_history_pattern const_info.cs0_nargs const_info.cs0_cstr pb.history in
 
   (* We prepare the matching on x1:T1 .. xn:Tn using some heuristic to *)
   (* build the name x1..xn from the names present in the equations *)
   (* that had matched constructor C *)
-  let cs_args = const_info.cs_args in
+  let cs_args = const_info.cs0_args in
   let names,aliasname = get_names pb.env cs_args eqns in
   let typs = List.map2 (fun (_,c,t) na -> (na,c,t)) cs_args names in
 
@@ -1172,7 +1173,7 @@ let build_branch current realargs deps (realnames,curname) pb arsign eqns const_
   (* generalization *)
   let dep_sign =
     find_dependencies_signature
-      (dependencies_in_rhs const_info.cs_nargs current pb.tomatch eqns)
+      (dependencies_in_rhs const_info.cs0_nargs current pb.tomatch eqns)
       (List.rev typs') in
 
   (* The dependent term to subst in the types of the remaining UnPushed
@@ -1184,14 +1185,14 @@ let build_branch current realargs deps (realnames,curname) pb arsign eqns const_
   (* Gamma;x1..xn;curalias:I(x1..xn) |- PI tms'. pred'                *)
   (* where, in tms and pred, those realargs that are vars are         *)
   (* replaced by the corresponding xi and cur replaced by curalias    *)
-  let cirealargs = Array.to_list const_info.cs_concl_realargs in
+  let cirealargs = Array.to_list const_info.cs0_concl_realargs in
 
   (* Do the specialization for terms to match *)
   let tomatch = List.fold_right2 (fun par arg tomatch ->
     match kind_of_term par with
-    | Rel i -> replace_tomatch (i+const_info.cs_nargs) arg tomatch
+    | Rel i -> replace_tomatch (i+const_info.cs0_nargs) arg tomatch
     | _ -> tomatch) (current::realargs) (ci::cirealargs)
-      (lift_tomatch_stack const_info.cs_nargs pb.tomatch) in
+      (lift_tomatch_stack const_info.cs0_nargs pb.tomatch) in
 
   let pred_is_not_dep =
     noccur_predicate_between 1 (List.length realnames + 1) pb.pred tomatch in
@@ -1217,12 +1218,12 @@ let build_branch current realargs deps (realnames,curname) pb arsign eqns const_
   | Anonymous ->
       NonDepAlias
   | Name _ ->
-      let cur_alias = lift const_info.cs_nargs current in
+      let cur_alias = lift const_info.cs0_nargs current in
       let ind =
         appvect (
-          applist (mkInd (inductive_of_constructor const_info.cs_cstr),
-                   List.map (lift const_info.cs_nargs) const_info.cs_params),
-          const_info.cs_concl_realargs) in
+          applist (mkInd (inductive_of_constructor const_info.cs0_cstr),
+                   List.map (lift const_info.cs0_nargs) const_info.cs0_params),
+          const_info.cs0_concl_realargs) in
       Alias (aliasname,cur_alias,(ci,ind)) in
 
   let tomatch = List.rev_append (alias :: currents) tomatch in
@@ -1275,7 +1276,8 @@ and match_current pb tomatch =
 	shift_problem tomatch pb
     | IsInd (_,(IndType(indf,realargs) as indt),names) ->
 	let mind,_ = dest_ind_family indf in
-	let cstrs = get_constructors pb.env indf in
+	(* hit: drop path constructors *)
+	let (cstrs,_) = get_constructors pb.env indf in
 	let arsign, _ = get_arity pb.env indf in
 	let eqns,onlydflt = group_equations pb mind current cstrs pb.mat in
         let no_cstr = Int.equal (Array.length cstrs) 0 in
@@ -1879,9 +1881,10 @@ let constr_of_pat env isevars arsign pat avoid =
 	in
 	let ind, params = dest_ind_family indf in
 	if not (eq_ind ind cind) then error_bad_constructor_loc l cstr ind;
-	let cstrs = get_constructors env indf in
+	(* hit: drop path constructors *)
+	let (cstrs,_) = get_constructors env indf in
 	let ci = cstrs.(i-1) in
-	let nb_args_constr = ci.cs_nargs in
+	let nb_args_constr = ci.cs0_nargs in
 	assert (Int.equal nb_args_constr (List.length args));
 	let patargs, args, sign, env, n, m, avoid =
 	  List.fold_right2
@@ -1893,12 +1896,12 @@ let constr_of_pat env isevars arsign pat avoid =
 	       let args' = arg' :: List.map (lift n') args in
 	       let env' = push_rel_context sign' env in
 		 (pat' :: patargs, args', sign' @ sign, env', n' + n, succ m, avoid))
-	    ci.cs_args (List.rev args) ([], [], [], env, 0, 0, avoid)
+	    ci.cs0_args (List.rev args) ([], [], [], env, 0, 0, avoid)
 	in
 	let args = List.rev args in
 	let patargs = List.rev patargs in
 	let pat' = PatCstr (l, cstr, patargs, alias) in
-	let cstr = mkConstruct ci.cs_cstr in
+	let cstr = mkConstruct ci.cs0_cstr in
 	let app = applistc cstr (List.map (lift (List.length sign)) params) in
 	let app = applistc app args in
 	let apptype = Retyping.get_type_of env ( !isevars) app in

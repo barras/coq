@@ -850,7 +850,7 @@ let glob_constr_list_to_inductive_expr prms1 prms2 mib1 mib2 shift
     List.map (* zeta_normalize t ? *)
       (fun (id,t) -> false, ((Loc.ghost,id),glob_constr_to_constr_expr t))
       rawlist in
-  lident , bindlist , Some cstr_expr , lcstor_expr
+  lident , bindlist , Some cstr_expr , lcstor_expr, []
 
 
 let mkProd_reldecl (rdecl:rel_declaration) (t2:glob_constr) =

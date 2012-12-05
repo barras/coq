@@ -33,10 +33,10 @@ val detype : bool -> identifier list -> names_context -> constr -> glob_constr
 
 val detype_case :
   bool -> ('a -> glob_constr) ->
-  (constructor array -> int array -> 'a array ->
+  (constructor array -> int array -> int array -> 'a array ->
     (Loc.t * identifier list * cases_pattern list * glob_constr) list) ->
   ('a -> int -> bool) ->
-  identifier list -> inductive * case_style * int array * int ->
+  identifier list -> inductive * case_style * int array * int array * int ->
     'a option -> 'a -> 'a array -> glob_constr
 
 val detype_sort : sorts -> glob_sort

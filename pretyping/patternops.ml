@@ -162,7 +162,7 @@ let pattern_of_constr sigma t =
 	    cip_extensible = false }
 	in
 	let branch_of_constr i c =
-	  (i, ci.ci_cstr_ndecls.(i), pattern_of_constr c)
+	  (i, (Array.append ci.ci_cstr_ndecls ci.ci_cstr_npdecls).(i), pattern_of_constr c)
 	in
 	PCase (cip, pattern_of_constr p, pattern_of_constr a,
 	       Array.to_list (Array.mapi branch_of_constr br))

@@ -85,3 +85,25 @@ let push_named_to_rel_context hyps ctxt =
 	(n+1), (map_rel_declaration (substn_vars n s) d)::ctxt
     | [] -> 1, hyps in
   snd (subst ctxt)
+
+
+(** Substitution and telescope operations *)
+
+let subst_of_rel_context_args ctxt args =
+  let (s,rargs) = fold_rel_context
+    (fun (_,b,_) (s,args) ->
+      match b, args with
+	| None, a::args' -> (a::s, args')
+	| Some b,_ -> (substl s b::s, args)
+	| _ -> raise (Invalid_argument "subst_of_args: missing arguments"))
+    ctxt ~init:([],Array.to_list args) in
+  if rargs <> [] then raise (Invalid_argument "subst_of_args: too many arguments");
+  s
+
+let args_of_rel_context n hyps =
+  let rec reln l p = function
+    | (_,None,_) :: hyps -> reln (mkRel (n+p) :: l) (p+1) hyps
+    | (_,Some _,_) :: hyps -> reln l (p+1) hyps
+    | [] -> l
+  in
+  Array.of_list (reln [] 1 hyps)

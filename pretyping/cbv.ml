@@ -279,14 +279,16 @@ and cbv_stack_term info stack env t =
 
     (* constructor in a Case -> IOTA *)
     | (CONSTR((sp,n),[||]), APP(args,CASE(_,br,ci,env,stk)))
-            when red_set (info_flags info) fIOTA ->
+	    (* /!\ TODO: runtime check on inductive (hit) *)
+            when eq_ind sp ci.ci_ind && red_set (info_flags info) fIOTA ->
 	let cargs =
           Array.sub args ci.ci_npar (Array.length args - ci.ci_npar) in
         cbv_stack_term info (stack_app cargs stk) env br.(n-1)
 
     (* constructor of arity 0 in a Case -> IOTA *)
-    | (CONSTR((_,n),[||]), CASE(_,br,_,env,stk))
-            when red_set (info_flags info) fIOTA ->
+    | (CONSTR((sp,n),[||]), CASE(_,br,ci,env,stk))
+	    (* /!\ TODO: runtime check on inductive (hit) *)
+            when eq_ind sp ci.ci_ind && red_set (info_flags info) fIOTA ->
                     cbv_stack_term info stk env br.(n-1)
 
     (* may be reduced later by application *)

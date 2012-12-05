@@ -21,7 +21,9 @@ val infer_type : env -> types        -> unsafe_type_judgment * constraints
 
 val infer_local_decls :
   env -> (identifier * local_entry) list
-    -> env * rel_context * constraints
+    -> env * rel_context * universe * constraints
+
+val context_sort : sorts array -> universe
 
 (** {6 Basic operations of the typing machine. } *)
 

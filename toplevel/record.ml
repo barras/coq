@@ -166,8 +166,8 @@ let declare_projections indsp ?(kind=StructureComponent) ?name coers fieldimpls 
   let (mib,mip) = Global.lookup_inductive indsp in
   let paramdecls = mib.mind_params_ctxt in
   let r = mkInd indsp in
-  let rp = applist (r, Termops.extended_rel_list 0 paramdecls) in
-  let paramargs = Termops.extended_rel_list 1 paramdecls in (*def in [[params;x:rp]]*)
+  let rp = mkApp(r, Sign.args_of_rel_context 0 paramdecls) in
+  let paramargs = Sign.args_of_rel_context 1 paramdecls in (*def in [[params;x:rp]]*)
   let x = match name with Some n -> Name n | None -> Namegen.named_hd (Global.env()) r Anonymous in
   let fields = instantiate_possibly_recursive_type indsp paramdecls fields in
   let lifted_fields = Termops.lift_rel_context 1 fields in
@@ -215,8 +215,8 @@ let declare_projections indsp ?(kind=StructureComponent) ?name coers fieldimpls 
 	        let cl = Class.class_of_global (IndRef indsp) in
 	        Class.try_add_new_coercion_with_source refi Global ~source:cl
 	      end;
-	      let proj_args = (*Rel 1 refers to "x"*) paramargs@[mkRel 1] in
-	      let constr_fip = applist (constr_fi,proj_args) in
+	      (*Rel 1 refers to "x"*)
+	      let constr_fip = mkApp(mkApp(constr_fi,paramargs),[|mkRel 1|]) in
 	      (Some kn::sp_projs, Projection constr_fip::subst)
             with NotDefinable why ->
 	      warning_or_error coe indsp why;
@@ -244,14 +244,15 @@ open Typeclasses
 let declare_structure finite infer id idbuild paramimpls params arity fieldimpls fields
     ?(kind=StructureComponent) ?name is_coe coers sign =
   let nparams = List.length params and nfields = List.length fields in
-  let args = Termops.extended_rel_list nfields params in
-  let ind = applist (mkRel (1+nparams+nfields), args) in
+  let args = Sign.args_of_rel_context nfields params in
+  let ind = mkApp(mkRel (1+nparams+nfields), args) in
   let type_constructor = it_mkProd_or_LetIn ind fields in
   let mie_ind =
     { mind_entry_typename = id;
       mind_entry_arity = arity;
       mind_entry_consnames = [idbuild];
-      mind_entry_lc = [type_constructor] }
+      mind_entry_lc = [type_constructor];
+      mind_entry_pathcons = [] }
   in
   (* spiwack: raises an error if the structure is supposed to be non-recursive,
         but isn't *)

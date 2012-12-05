@@ -10,6 +10,7 @@ open Errors
 open Util
 open Glob_termops
 open Misctypes
+module Indops = Inductiveops
 
 let observe strm =
   if do_observe ()
@@ -303,7 +304,7 @@ let build_constructors_of_type ind' argl =
 		  Impargs.implicits_of_global constructref
 		in
 		let cst_narg =
-		  Inductiveops.mis_constructor_nargs_env
+		  Indops.mis_constructor_nargs_env
 		    (Global.env ())
 		    construct
 		in
@@ -344,13 +345,15 @@ let add_pat_variables pat typ env : Environ.env =
     match pat with
       | PatVar(_,na) -> Environ.push_rel (na,None,typ) env
       | PatCstr(_,c,patl,na) ->
-	  let Inductiveops.IndType(indf,indargs) =
-	    try Inductiveops.find_rectype env Evd.empty typ
+	  let Indops.IndType(indf,indargs) =
+	    try Indops.find_rectype env Evd.empty typ
 	    with Not_found -> assert false
 	  in
-	  let constructors = Inductiveops.get_constructors env indf in
-	  let constructor : Inductiveops.constructor_summary = List.find (fun cs -> cs.Inductiveops.cs_cstr = c) (Array.to_list constructors) in
-	  let cs_args_types :types list = List.map (fun (_,_,t) -> t) constructor.Inductiveops.cs_args in
+	  (* hit: drop path constructors *)
+	  let (constructors,_) = Indops.get_constructors env indf in
+	  let constructor : Indops.point_constructor_summary =
+	    List.find (fun cs -> cs.Indops.cs0_cstr = c) (Array.to_list constructors) in
+	  let cs_args_types :types list = List.map (fun (_,_,t) -> t) constructor.Indops.cs0_args in
 	  List.fold_left2 add_pat_variables env patl (List.rev cs_args_types)
   in
   let new_env = add_pat_variables  env pat typ in
@@ -387,18 +390,20 @@ let rec pattern_to_term_and_type env typ  = function
 	mkGVar id
   | PatCstr(loc,constr,patternl,_) ->
       let cst_narg =
-	Inductiveops.mis_constructor_nargs_env
+	Indops.mis_constructor_nargs_env
 	  (Global.env ())
 	  constr
       in
-      let Inductiveops.IndType(indf,indargs) =
-	try Inductiveops.find_rectype env Evd.empty typ
+      let Indops.IndType(indf,indargs) =
+	try Indops.find_rectype env Evd.empty typ
 	with Not_found -> assert false
       in
-      let constructors = Inductiveops.get_constructors env indf in
-      let constructor  = List.find (fun cs -> cs.Inductiveops.cs_cstr = constr) (Array.to_list constructors) in
-      let cs_args_types :types list = List.map (fun (_,_,t) -> t) constructor.Inductiveops.cs_args in
-      let _,cstl = Inductiveops.dest_ind_family indf in
+      (* hit: drop path constructors *)
+      let (constructors,_) = Indops.get_constructors env indf in
+      let constructor  =
+	List.find (fun cs -> cs.Indops.cs0_cstr = constr) (Array.to_list constructors) in
+      let cs_args_types :types list = List.map (fun (_,_,t) -> t) constructor.Indops.cs0_args in
+      let _,cstl = Indops.dest_ind_family indf in
       let csta = Array.of_list cstl in
       let implicit_args =
 	Array.to_list
@@ -612,7 +617,7 @@ let rec build_entry_lc env funnames avoid rt  : glob_constr build_entry_return =
 	let b_as_constr = Pretyping.understand Evd.empty env b in
 	let b_typ = Typing.type_of env Evd.empty b_as_constr in
 	let (ind,_) =
-	  try Inductiveops.find_inductive env Evd.empty b_typ
+	  try Indops.find_inductive env Evd.empty b_typ
 	  with Not_found ->
 	    errorlabstrm "" (str "Cannot find the inductive associated to " ++
 			       Printer.pr_glob_constr b ++ str " in " ++
@@ -644,7 +649,7 @@ let rec build_entry_lc env funnames avoid rt  : glob_constr build_entry_return =
 	  let b_as_constr = Pretyping.understand Evd.empty env b in
 	  let b_typ = Typing.type_of env Evd.empty b_as_constr in
 	  let (ind,_) =
-	    try Inductiveops.find_inductive env Evd.empty b_typ
+	    try Indops.find_inductive env Evd.empty b_typ
 	    with Not_found ->
 	      errorlabstrm "" (str "Cannot find the inductive associated to " ++
 				 Printer.pr_glob_constr b ++ str " in " ++
@@ -1374,7 +1379,7 @@ let do_build_inductive
     ((Loc.ghost,relnames.(i)),
     rel_params,
     Some rel_arities.(i),
-    ext_rel_constructors),[]
+    ext_rel_constructors,[]),[]
   in
   let ext_rel_constructors = (Array.mapi rel_ind ext_rels_constructors) in
   let rel_inds = Array.to_list ext_rel_constructors in
@@ -1406,7 +1411,8 @@ let do_build_inductive
 	let _time3 = System.get_time () in
 (* 	Pp.msgnl (str "error : "++ str (string_of_float (System.time_difference time2 time3))); *)
 	let repacked_rel_inds =
-	  List.map  (fun ((a , b , c , l),ntn) -> ((false,a) , b, c , Vernacexpr.Inductive_kw, Vernacexpr.Constructors l),ntn )
+	  List.map  (fun ((a , b , c , l, pl),ntn) ->
+	    ((false,a) , b, c , Vernacexpr.Inductive_kw, Vernacexpr.Constructors (l,pl)),ntn )
 	                  rel_inds
 	in
 	let msg =
@@ -1421,7 +1427,8 @@ let do_build_inductive
 	let _time3 = System.get_time () in
 (* 	Pp.msgnl (str "error : "++ str (string_of_float (System.time_difference time2 time3))); *)
 	let repacked_rel_inds =
-	  List.map  (fun ((a , b , c , l),ntn) -> ((false,a) , b, c , Vernacexpr.Inductive_kw, Vernacexpr.Constructors l),ntn )
+	  List.map  (fun ((a , b , c , l, pl),ntn) ->
+	    ((false,a) , b, c , Vernacexpr.Inductive_kw, Vernacexpr.Constructors (l,pl)),ntn )
 	                  rel_inds
 	in
 	let msg =

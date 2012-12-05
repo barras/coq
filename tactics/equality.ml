@@ -644,9 +644,10 @@ let descend_then sigma env head dirn =
       error "Cannot project on an inductive type derived from a dependency." in
    let ind,_ = dest_ind_family indf in
   let (mib,mip) = lookup_mind_specif env ind in
-  let cstr = get_constructors env indf in
-  let dirn_nlams = cstr.(dirn-1).cs_nargs in
-  let dirn_env = push_rel_context cstr.(dirn-1).cs_args env in
+  (* hit: drop path constructors *)
+  let (cstr,_) = get_constructors env indf in
+  let dirn_nlams = cstr.(dirn-1).cs0_nargs in
+  let dirn_env = push_rel_context cstr.(dirn-1).cs0_args env in
   (dirn_nlams,
    dirn_env,
    (fun dirnval (dfltval,resty) ->
@@ -655,7 +656,7 @@ let descend_then sigma env head dirn =
 	it_mkLambda_or_LetIn (lift (mip.mind_nrealargs+1) resty) deparsign in
       let build_branch i =
 	let result = if Int.equal i dirn then dirnval else dfltval in
-	it_mkLambda_or_LetIn_name env result cstr.(i-1).cs_args in
+	it_mkLambda_or_LetIn_name env result cstr.(i-1).cs0_args in
       let brl =
         List.map build_branch
           (List.interval 1 (Array.length mip.mind_consnames)) in
@@ -696,10 +697,11 @@ let construct_discriminator sigma env dirn c sort =
   let (true_0,false_0,sort_0) = build_coq_True(),build_coq_False(),Prop Null in
   let deparsign = make_arity_signature env true indf in
   let p = it_mkLambda_or_LetIn (mkSort sort_0) deparsign in
-  let cstrs = get_constructors env indf in
+  (* hit: drop path constructors *)
+  let (cstrs,_) = get_constructors env indf in
   let build_branch i =
     let endpt = if Int.equal i dirn then true_0 else false_0 in
-    it_mkLambda_or_LetIn endpt cstrs.(i-1).cs_args in
+    it_mkLambda_or_LetIn endpt cstrs.(i-1).cs0_args in
   let brl =
     List.map build_branch(List.interval 1 (Array.length mip.mind_consnames)) in
   let ci = make_case_info env ind RegularStyle in

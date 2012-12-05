@@ -247,7 +247,8 @@ let mk_inductive_obj sp mib packs variables nparams hyps finite =
             D.mind_typename=typename } = p
        in
         let arity = Inductive.type_of_inductive (Global.env()) (mib,p) in
-        let lc = Inductiveops.arities_of_constructors (Global.env ()) (sp,!tyno) in
+	(* hit: drop path constructors *)
+        let (lc,_) = Inductiveops.arities_of_constructors (Global.env ()) (sp,!tyno) in
         let cons =
          (Array.fold_right (fun (name,lc) i -> (name,lc)::i)
           (Array.mapi

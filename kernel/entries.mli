@@ -36,11 +36,15 @@ then, in i{^ th} block, [mind_entry_params] is [xn:Xn;...;x1:X1];
 [mind_entry_lc] is [Ti1;...;Tini], defined in context [[A'1;...;A'p;x1:X1;...;xn:Xn]] where [A'i] is [Ai] generalized over [[x1:X1;...;xn:Xn]].
 *)
 
+type pathcons_entry =
+  (identifier * local_entry) list * constr * constr
+
 type one_inductive_entry = {
   mind_entry_typename : identifier;
   mind_entry_arity : constr;
   mind_entry_consnames : identifier list;
-  mind_entry_lc : constr list }
+  mind_entry_lc : constr list;
+  mind_entry_pathcons : (identifier *  pathcons_entry) list }
 
 type mutual_inductive_entry = {
   mind_entry_record : bool;

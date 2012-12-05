@@ -120,6 +120,21 @@ type inductive_arity =
 | Monomorphic of monomorphic_inductive_arity
 | Polymorphic of polymorphic_arity
 
+(** Path constructors follow the syntax
+    forall args, lhs = rhs :> inst
+    these terms and contexts are understood in the context containing
+    - variables for the inductive types (as for point constructors)
+    - variables for the point constructors
+    args are not supposed (yet?) to refer to pont constructors.
+*)
+type path_constructor = {
+  c1_name : identifier;
+  c1_args : rel_context;
+  c1_inst : constr array; (* includes non-uniform parameters (FIX) *)
+  c1_lhs : constr;
+  c1_rhs : constr
+}
+
 type one_inductive_body = {
 (** {8 Primitive datas } *)
 
@@ -136,6 +151,9 @@ type one_inductive_body = {
      where the Ik are replaced by de Bruijn index in the
      context I1:forall params, U1 ..  In:forall params, Un *)
 
+(** Higher inductive path constructors *)
+    mind_pathcons : path_constructor array;
+
 (** {8 Derived datas } *)
 
     mind_nrealargs : int; (** Number of expected real arguments of the type (no let, no params) *)
@@ -147,8 +165,9 @@ type one_inductive_body = {
     mind_nf_lc : types array; (** Head normalized constructor types so that their conclusion is atomic *)
 
     mind_consnrealdecls : int array;
+    mind_pconsnrealdecls : int array;
  (** Length of the signature of the constructors (with let, w/o params)
-    (not used in the kernel) *)
+    (not used in the kernel) 0- and 1- constructors*)
 
     mind_recargs : wf_paths; (** Signature of recursive arguments in the constructors *)
 

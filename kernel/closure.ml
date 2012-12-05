@@ -877,7 +877,7 @@ let rec knr info m stk =
         | None -> (set_norm m; (m,stk)))
   | FConstruct(ind,c) when red_set info.i_flags fIOTA ->
       (match strip_update_shift_app m stk with
-          (depth, args, Zcase(ci,_,br)::s) ->
+          (depth, args, Zcase(ci,_,br)::s) when eq_ind ind ci.ci_ind->
             assert (ci.ci_npar>=0);
             let rargs = drop_parameters depth ci.ci_npar args in
             kni info br.(c-1) (rargs@s)

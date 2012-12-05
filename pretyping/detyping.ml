@@ -238,9 +238,10 @@ let rec decomp_branch n nal b (avoid,env as e) c =
 
 let rec build_tree na isgoal e ci cl =
   let mkpat n rhs pl = PatCstr(dl,(ci.ci_ind,n+1),pl,update_name na rhs) in
-  let cnl = ci.ci_cstr_ndecls in
+  let cnl = Array.append ci.ci_cstr_ndecls ci.ci_cstr_npdecls in
   List.flatten
-    (List.tabulate (fun i -> contract_branch isgoal e (cnl.(i),mkpat i,cl.(i)))
+    (List.tabulate (fun i -> contract_branch isgoal e
+                     (cnl.(i),mkpat i,cl.(i)))
        (Array.length cl))
 
 and align_tree nal isgoal (e,c as rhs) = match nal with
@@ -307,7 +308,7 @@ let it_destRLambda_or_LetIn_names n c =
   in aux n [] c
 
 let detype_case computable detype detype_eqns testdep avoid data p c bl =
-  let (indsp,st,consnargsl,k) = data in
+  let (indsp,st,consnargsl,pconsnargsl,k) = data in
   let synth_type = synthetize_type () in
   let tomatch = detype c in
   let alias, aliastyp, pred=
@@ -350,15 +351,16 @@ let detype_case computable detype detype_eqns testdep avoid data p c bl =
   | IfStyle, None ->
       let bl' = Array.map detype bl in
       let nondepbrs =
-	Array.map3 (extract_nondep_branches testdep) bl bl' consnargsl in
+	Array.map3 (extract_nondep_branches testdep) bl bl'
+	  (Array.append consnargsl pconsnargsl) in
       if Array.for_all ((!=) None) nondepbrs then
 	GIf (dl,tomatch,(alias,pred),
              Option.get nondepbrs.(0),Option.get nondepbrs.(1))
       else
-	let eqnl = detype_eqns constructs consnargsl bl in
+	let eqnl = detype_eqns constructs consnargsl pconsnargsl bl in
 	GCases (dl,tag,pred,[tomatch,(alias,aliastyp)],eqnl)
   | _ ->
-      let eqnl = detype_eqns constructs consnargsl bl in
+      let eqnl = detype_eqns constructs consnargsl pconsnargsl bl in
       GCases (dl,tag,pred,[tomatch,(alias,aliastyp)],eqnl)
 
 let detype_sort = function
@@ -420,7 +422,7 @@ let rec detype (isgoal:bool) avoid env t =
 	  (detype_eqns isgoal avoid env ci comp)
 	  is_nondep_branch avoid
 	  (ci.ci_ind,ci.ci_pp_info.style,
-	   ci.ci_cstr_ndecls,ci.ci_pp_info.ind_nargs)
+	   ci.ci_cstr_ndecls,ci.ci_cstr_npdecls,ci.ci_pp_info.ind_nargs)
 	  (Some p) c bl
     | Fix (nvn,recdef) -> detype_fix isgoal avoid env nvn recdef
     | CoFix (n,recdef) -> detype_cofix isgoal avoid env n recdef
@@ -493,7 +495,7 @@ and share_names isgoal n l avoid env c t =
         let t = detype isgoal avoid env t in
         (List.rev l,c,t)
 
-and detype_eqns isgoal avoid env ci computable constructs consnargsl bl =
+and detype_eqns isgoal avoid env ci computable constructs consnargsl pconsnargsl bl =
   try
     if !Flags.raw_print or not (reverse_matching ()) then raise Exit;
     let mat = build_tree Anonymous isgoal (avoid,env) ci bl in
@@ -501,7 +503,8 @@ and detype_eqns isgoal avoid env ci computable constructs consnargsl bl =
       mat
   with _ ->
     Array.to_list
-      (Array.map3 (detype_eqn isgoal avoid env) constructs consnargsl bl)
+      (Array.map3 (detype_eqn isgoal avoid env)
+	 constructs (Array.append consnargsl pconsnargsl) bl)
 
 and detype_eqn isgoal avoid env constr construct_nargs branch =
   let make_pat x avoid env b ids =

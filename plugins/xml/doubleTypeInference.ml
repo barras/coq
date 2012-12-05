@@ -114,14 +114,18 @@ let double_type_of env sigma cstr expectedty subterms_to_types =
          Reduction.whd_betadeltaiota env (Retyping.get_type_of env sigma c) in
         let cj = execute env sigma c (Some expectedtype) in
         let pj = execute env sigma p None in
-        let (expectedtypes,_,_) =
+        let (expectedtypes,expectedpathtypes,_,_) =
          let indspec = Inductive.find_rectype env cj.Environ.uj_type in
-          Inductive.type_case_branches env indspec pj cj.Environ.uj_val
-        in
+          Inductive.type_case_branches env indspec pj cj.Environ.uj_val in
+	let lf, lg = CArray.chop (Array.length expectedtypes) lf in
         let lfj =
-         execute_array env sigma lf
-          (Array.map (function x -> Some x) expectedtypes) in
-        let (j,_) = Typeops.judge_of_case env ci pj cj lfj in
+          execute_array env sigma lf
+            (Array.map (function x -> Some x) expectedtypes) in
+	let egtypes = expectedpathtypes (Array.map Environ.j_val lfj) in
+        let lgj =
+          execute_array env sigma lg
+            (Array.map (function x -> Some x) egtypes) in
+        let (j,_) = Typeops.judge_of_case env ci pj cj (Array.append lfj lgj) in
          j
 
      | T.Fix ((vn,i as vni),recdef) ->

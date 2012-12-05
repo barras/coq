@@ -56,6 +56,11 @@ let ind_subst mind mib =
   let make_Ik k = mkInd (mind,ntypes-k-1) in
   List.tabulate make_Ik ntypes
 
+let cstr_subst ind (mib,mip) params =
+  let ncstr0 = Array.length mip.mind_consnames in
+  let make_Ck k = mkApp(mkConstruct(ind,ncstr0-k),params) in
+  List.tabulate make_Ck ncstr0
+
 (* Instantiate inductives in constructor type *)
 let constructor_instantiate mind mib c =
   let s = ind_subst mind mib in
@@ -212,14 +217,6 @@ let max_inductive_sort =
 (************************************************************************)
 (* Type of a constructor *)
 
-let type_of_constructor cstr (mib,mip) =
-  let ind = inductive_of_constructor cstr in
-  let specif = mip.mind_user_lc in
-  let i = index_of_constructor cstr in
-  let nconstr = Array.length mip.mind_consnames in
-  if i > nconstr then error "Not enough constructors in the type.";
-  constructor_instantiate (fst ind) mib specif.(i-1)
-
 let arities_of_specif kn (mib,mip) =
   let specif = mip.mind_nf_lc in
   Array.map (constructor_instantiate kn mib) specif
@@ -227,9 +224,50 @@ let arities_of_specif kn (mib,mip) =
 let arities_of_constructors ind specif =
   arities_of_specif (fst ind) specif
 
+
+let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
+let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
+let tr_cst = mkConst(make_con logicp empty_dirpath (label_of_id(id_of_string"eq_rect")))
+
+let type_of_path_constructor (mind,i) (mib,mip as specif) =
+  let pctxt = mib.mind_params_ctxt in
+  let nc = Array.length mip.mind_consnames in
+  let params = Sign.args_of_rel_context 0 pctxt in
+  (* substitution of constructors, parameters and inductive type variables *)
+  let ipc_subst =
+    cstr_subst (mind,i) specif params @
+      Sign.subst_of_rel_context_args pctxt params @
+      ind_subst mind mib in
+  let irel = mib.mind_ntypes - i + mib.mind_nparams + nc in
+  fun j pc ->
+    let nz = rel_context_length pc.c1_args in
+    let irel' = irel + nz in
+    let ty = mkApp(mkRel irel',Array.append
+      (Sign.args_of_rel_context (nc+nz) pctxt) pc.c1_inst) in
+    let ccl = mkApp(eq_cst,[|ty;pc.c1_lhs;pc.c1_rhs|]) in
+    it_mkProd_or_LetIn
+      (substl ipc_subst (it_mkProd_or_LetIn ccl pc.c1_args)) pctxt
+
+let type_of_constructor ((mind,i),j) (mib,mip as specif) =
+  let lcty = mip.mind_user_lc in
+  let nconstr = Array.length mip.mind_consnames in
+  let npconstr = Array.length mip.mind_pathcons in
+  if j > nconstr then
+    if j > nconstr+npconstr then
+      error "Not enough constructors in the type."
+    else
+      let j' = j-nconstr in
+      type_of_path_constructor (mind,i) specif j' mip.mind_pathcons.(j'-1)
+  else
+    constructor_instantiate mind mib lcty.(j-1)
+
 let type_of_constructors ind (mib,mip) =
   let specif = mip.mind_user_lc in
   Array.map (constructor_instantiate (fst ind) mib) specif
+
+let arities_of_path_constructors ind (_,mip as specif) =
+  let mk_cstrty = type_of_path_constructor ind specif in
+  Array.mapi (fun i -> mk_cstrty (i+1)) mip.mind_pathcons
 
 (************************************************************************)
 
@@ -263,20 +301,10 @@ let get_instantiated_arity (mib,mip) params =
 
 let elim_sorts (_,mip) = mip.mind_kelim
 
-let extended_rel_list n hyps =
-  let rec reln l p = function
-    | (_,None,_) :: hyps -> reln (mkRel (n+p) :: l) (p+1) hyps
-    | (_,Some _,_) :: hyps -> reln l (p+1) hyps
-    | [] -> l
-  in
-  reln [] 1 hyps
-
 let build_dependent_inductive ind (_,mip) params =
   let realargs,_ = List.chop mip.mind_nrealargs_ctxt mip.mind_arity_ctxt in
-  applist
-    (mkInd ind,
-       List.map (lift mip.mind_nrealargs_ctxt) params
-       @ extended_rel_list 0 realargs)
+  mkApp(applist(mkInd ind, List.map (lift mip.mind_nrealargs_ctxt) params),
+	Sign.args_of_rel_context 0 realargs)
 
 (* This exception is local *)
 exception LocalArity of (sorts_family * sorts_family * arity_error) option
@@ -339,6 +367,90 @@ let build_branches_type ind (_,mip as specif) params p =
     it_mkProd_or_LetIn base args in
   Array.mapi build_one_branch mip.mind_nf_lc
 
+
+let map_pathcons f (args,inst,lhs,rhs) =
+   let pcbundle =
+     it_mkProd_or_LetIn(mkApp(mkProp,[|mkApp(mkProp,inst);lhs;rhs|])) args in
+   let rpcbundle = f pcbundle in
+   let (args, dcl) = decompose_prod_assum rpcbundle in
+   let (_,v) = destApp dcl in
+   let inst = if Array.length inst = 0 then [||] else snd (destApp v.(0)) in
+   let lhs = v.(1) in
+   let rhs = v.(2) in
+   (args,inst,lhs,rhs)
+
+let build_path_branch_type ind (mib,mip) params p dep =
+  (* number of 0-constructors (= number of branches in the context...) *)
+  let nc = Array.length mip.mind_consnames in
+  (* type of the match as a function: forall (a:pargs) (i:I(p,a)), P(a,i) *)
+  let hty =
+    let arsign,_ = get_instantiated_arity (mib,mip) (Array.to_list params) in
+    let na = rel_context_length arsign in
+    let (na',pargs) =
+      if dep then
+	let inst = Sign.args_of_rel_context 0 arsign in
+	let ity = mkApp(mkApp(mkInd ind,Array.map (lift na) params),inst) in
+	(na+1, (Anonymous,None,ity)::arsign)
+      else
+	(na,arsign) in
+    it_mkProd_or_LetIn
+      (beta_appvect(lift na' p) (Sign.args_of_rel_context 0 pargs)) pargs in
+  fun br (i,dargs,inst,lhs,rhs) ->
+    assert (Array.length br = nc);
+    let cstr = mkConstruct(ind,i+nc) in
+    let nz = rel_context_length dargs in
+    let par' = Array.map (lift (1+nz)) params in
+    let (dargs,inst,lhs,rhs) = map_pathcons (lift 1) (dargs,inst,lhs,rhs) in
+    (* Computes the lhs or rhs where constructors are replaced by 0-branches and
+       recursive variables by calls to h *)
+    let rec make_hs k t args =
+      match kind_of_term t with
+	| Construct(cind,j) when eq_ind cind ind && j<=nc ->
+	  let rargs = Array.sub args (Array.length params) (Array.length args-Array.length params) in
+	  beta_appvect (lift (nz+1) br.(j-1)) rargs
+      (*      | Rel i when i = -> ()*)
+	| App(u,args') -> make_hs k u (Array.append args' args)
+	| _ -> assert false in
+    (* Generate the conclusion of the branch: transport lhs using the 1-constructor *)
+    let make_transport =
+      let lhs' = make_hs 0 lhs [||] in
+      let rhs' = make_hs 0 rhs [||] in
+      let ity = mkApp(mkInd ind,Array.append par' inst) in
+      let (ty,tyrhs) = if dep then
+	  let ty = beta_appvect (lift (1+nz) p) inst in
+	  (ty, beta_appvect ty [|rhs|])
+	else
+	  let tyrhs = beta_appvect (lift (nc+1+nz) p) inst in
+	  (mkLambda(Anonymous,ity,lift 1 tyrhs), tyrhs) in
+      let d = mkApp(cstr,Array.append par' (Sign.args_of_rel_context 0 dargs)) in
+      mkApp(eq_cst,[|tyrhs;mkApp(tr_cst,[|ity;lhs;ty;lhs';rhs;d|]);rhs'|]) in
+
+  (* Generate the type of the branch: forall (h:hty) (z:args), tr_P(C(params,z),lhs') = rhs'
+     in the context containing the 0-branches *)
+  mkProd (Name(id_of_string"h"),hty, it_mkProd_or_LetIn make_transport dargs)
+
+
+let build_path_branches_type ind (mib,mip as specif) params p =
+(* Take care not to interfere with non-hit types. Hits do not play well
+   with non-uniform parameters: params does not instantiates the full params
+   context (only the uniform part...) *)
+  if Array.length mip.mind_pathcons = 0 then fun _ -> [||]
+  else
+  (* substitution of constructors, parameters and inductive type variables *)
+  let ipc_subst =
+    cstr_subst ind specif params@
+     Sign.subst_of_rel_context_args mib.mind_params_ctxt params@
+      ind_subst (fst ind) mib in
+  let instantiate i pc =
+    (* instantiate d with parameters (in the context of the branch conclusion) *)
+    let (dargs,inst,lhs,rhs) =
+      map_pathcons (substl ipc_subst) (pc.c1_args,pc.c1_inst,pc.c1_lhs,pc.c1_rhs) in
+    (i,dargs,inst,lhs,rhs) in
+  let mk_type = build_path_branch_type ind specif params p true in
+  fun br ->
+    Array.mapi (fun i pc -> mk_type br (instantiate (i+1) pc)) mip.mind_pathcons
+
+
 (* [p] is the predicate, [c] is the match object, [realargs] is the
    list of real args of the inductive type *)
 let build_case_type n p c realargs =
@@ -351,8 +463,10 @@ let type_case_branches env (ind,largs) pj c =
   let p = pj.uj_val in
   let univ = is_correct_arity env c pj ind specif params in
   let lc = build_branches_type ind specif params p in
+  let plc =
+    build_path_branches_type ind specif (Array.of_list params) pj.uj_val in
   let ty = build_case_type (snd specif).mind_nrealargs_ctxt p c realargs in
-  (lc, ty, univ)
+  (lc, plc, ty, univ)
 
 
 (************************************************************************)
@@ -363,7 +477,8 @@ let check_case_info env indsp ci =
   if
     not (eq_ind indsp ci.ci_ind) ||
     not (Int.equal mib.mind_nparams ci.ci_npar) ||
-    not (Array.equal Int.equal mip.mind_consnrealdecls ci.ci_cstr_ndecls)
+    not (Array.equal Int.equal mip.mind_consnrealdecls ci.ci_cstr_ndecls) ||
+    not (Array.equal Int.equal mip.mind_pconsnrealdecls ci.ci_cstr_npdecls)
   then raise (TypeError(env,WrongCaseInfo(indsp,ci)))
 
 (************************************************************************)

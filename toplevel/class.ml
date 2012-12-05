@@ -186,13 +186,13 @@ let build_id_coercion idf_opt source =
   let val_f =
     it_mkLambda_or_LetIn
       (mkLambda (Name (id_of_string "x"),
-		 applistc vs (extended_rel_list 0 lams),
+		 mkApp(vs,Sign.args_of_rel_context 0 lams),
 		 mkRel 1))
        lams
   in
   let typ_f =
     it_mkProd_wo_LetIn
-      (mkProd (Anonymous, applistc vs (extended_rel_list 0 lams), lift 1 t))
+      (mkProd (Anonymous, mkApp(vs,Sign.args_of_rel_context 0 lams), lift 1 t))
       lams
   in
   (* juste pour verification *)

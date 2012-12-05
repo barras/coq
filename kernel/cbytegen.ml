@@ -435,10 +435,15 @@ let rec str_const c =
       with Not_found ->
 	let oib = lookup_mind kn !global_env in
 	let oip = oib.mind_packets.(j) in
-	let num,arity = oip.mind_reloc_tbl.(i-1) in
 	let nparams = oib.mind_nparams in
-	if Int.equal (nparams + arity) 0 then Bstrconst(Const_b0 num)
-	else Bconstruct_app(num,nparams,arity,[||])
+	if i > Array.length oip.mind_consnames then begin
+	  Pp.msg_warning
+	    (Pp.str "VM: path constructors are not compiled correctly yet!");
+	  Bconstruct_app(i,nparams,0,[||]) (* TODO *)
+	end else
+	  let num,arity = oip.mind_reloc_tbl.(i-1) in
+	  if Int.equal (nparams + arity) 0 then Bstrconst(Const_b0 num)
+	  else Bconstruct_app(num,nparams,arity,[||])
       end
   | _ -> Bconstr c
 

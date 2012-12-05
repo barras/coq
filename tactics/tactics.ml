@@ -886,9 +886,9 @@ let make_projection sigma params cstr sign elim i n c =
   let elim = match elim with
   | NotADefinedRecordUseScheme elim ->
       (* bugs: goes from right to left when i increases! *)
-      let (na,b,t) = List.nth cstr.cs_args i in
+      let (na,b,t) = List.nth cstr.cs0_args i in
       let b = match b with None -> mkRel (i+1) | Some b -> b in
-      let branch = it_mkLambda_or_LetIn b cstr.cs_args in
+      let branch = it_mkLambda_or_LetIn b cstr.cs0_args in
       if
 	(* excludes dependent projection types *)
 	noccur_between 1 (n-i-1) t
@@ -904,11 +904,11 @@ let make_projection sigma params cstr sign elim i n c =
       match List.nth l i with
       | Some proj ->
 	  let t = Typeops.type_of_constant (Global.env()) proj in
-	  let args = extended_rel_vect 0 sign in
+	  let args = Sign.args_of_rel_context 0 sign in
 	  Some (beta_applist (mkConst proj,params),prod_applist t (params@[mkApp (c,args)]))
       | None -> None
   in Option.map (fun (abselim,elimt) -> 
-    let c = beta_applist (abselim,[mkApp (c,extended_rel_vect 0 sign)]) in
+    let c = beta_applist (abselim,[mkApp(c,Sign.args_of_rel_context 0 sign)]) in
     (it_mkLambda_or_LetIn c sign, it_mkProd_or_LetIn elimt sign)) elim
 
 let descend_in_conjunctions tac exit c gl =
@@ -922,7 +922,7 @@ let descend_in_conjunctions tac exit c gl =
 	let id = fresh_id [] (id_of_string "H") gl in
 	let IndType (indf,_) = pf_apply find_rectype gl ccl in
 	let params = snd (dest_ind_family indf) in
-	let cstr = (get_constructors (pf_env gl) indf).(0) in
+	let cstr = (fst(get_constructors (pf_env gl) indf)).(0) in
 	let elim =
 	  try DefinedRecord (Recordops.lookup_projections ind)
 	  with Not_found ->
@@ -2754,7 +2754,7 @@ let compute_scheme_signature scheme names_info ind_type_guess =
 	    let ind_is_ok =
 	      List.equal eq_constr
 		(List.lastn scheme.nargs indargs)
-		(extended_rel_list 0 scheme.args) in
+		(Array.to_list(Sign.args_of_rel_context 0 scheme.args)) in
 	    if not (ccl_arg_ok & ind_is_ok) then
 	      error_ind_scheme "the conclusion of"
 	  in (cond, check_concl)

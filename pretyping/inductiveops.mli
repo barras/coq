@@ -20,10 +20,10 @@ val type_of_inductive    : env -> inductive -> types
 
 (** Return type as quoted by the user *)
 val type_of_constructor  : env -> constructor -> types
-val type_of_constructors : env -> inductive -> types array
+val type_of_constructors : env -> inductive -> types array * types array
 
 (** Return constructor types in normal form *)
-val arities_of_constructors : env -> inductive -> types array
+val arities_of_constructors : env -> inductive -> types array * types array
 
 (** An inductive type with its parameters *)
 type inductive_family
@@ -61,6 +61,7 @@ val mis_constr_nargs : inductive -> int array
 val mis_constr_nargs_env : env -> inductive -> int array
 
 val nconstructors : inductive -> int
+val npconstructors : inductive -> int
 
 (** @return the lengths of parameters signature and real arguments signature
     with letin *)
@@ -94,24 +95,41 @@ val allowed_sorts : env -> inductive -> sorts_family list
 
 (** Extract information from an inductive family *)
 
-type constructor_summary = {
-  cs_cstr : constructor;    (* internal name of the constructor *)
-  cs_params : constr list;  (* parameters of the constructor in current ctx *)
-  cs_nargs : int;           (* length of arguments signature (letin included) *)
-  cs_args : rel_context;    (* signature of the arguments (letin included) *)
-  cs_concl_realargs : constr array; (* actual realargs in the concl of cstr *)
+type point_constructor_summary = {
+  cs0_cstr : constructor;    (* internal name of the constructor *)
+  cs0_params : constr list;  (* parameters of the constructor in current ctx *)
+  cs0_nargs : int;           (* length of arguments signature (letin included) *)
+  cs0_args : rel_context;    (* signature of the arguments (letin included) *)
+  cs0_concl_realargs : constr array; (* actual realargs in the concl of cstr *)
 }
-val lift_constructor : int -> constructor_summary -> constructor_summary
+type path_constructor_summary = {
+  cs1_cstr : constructor;    (* internal name of the constructor *)
+  cs1_params : constr list;  (* parameters of the constructor in current ctx *)
+  cs1_nargs : int;           (* length of arguments signature (letin included) *)
+  cs1_args : rel_context;    (* signature of the arguments (letin included) *)
+  cs1_inst : constr array;   (* instance of the equation *)
+  cs1_lhs : constr;          (* lhs of path *)
+  cs1_rhs : constr;          (* rhs of path *)
+}
+
+val lift_point_constructor : int -> point_constructor_summary -> point_constructor_summary
+val lift_path_constructor : int -> path_constructor_summary -> path_constructor_summary
 val get_constructor :
   inductive * mutual_inductive_body * one_inductive_body * constr list ->
-  int -> constructor_summary
+  int -> point_constructor_summary
+val get_path_constructor :
+  inductive * mutual_inductive_body * one_inductive_body * constr list ->
+  int -> path_constructor_summary
 val get_arity        : env -> inductive_family -> rel_context * sorts_family
-val get_constructors : env -> inductive_family -> constructor_summary array
-val build_dependent_constructor : constructor_summary -> constr
+val get_constructors : env -> inductive_family ->
+  point_constructor_summary array * path_constructor_summary array
+val build_dependent_constructor : point_constructor_summary -> constr
 val build_dependent_inductive   : env -> inductive_family -> constr
 val make_arity_signature : env -> bool -> inductive_family -> rel_context
 val make_arity : env -> bool -> inductive_family -> sorts -> types
-val build_branch_type : env -> bool -> constr -> constructor_summary -> types
+val build_branch_type : env -> bool -> constr -> point_constructor_summary -> types
+val build_path_branch_type :
+  env -> bool -> constr -> path_constructor_summary -> constr array -> types
 
 (** Raise [Not_found] if not given an valid inductive type *)
 val extract_mrectype : constr -> inductive * constr list

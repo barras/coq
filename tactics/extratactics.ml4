@@ -286,7 +286,7 @@ let project_hint pri l2r r =
     | _ -> assert false in
   let p =
     if l2r then build_coq_iff_left_proj () else build_coq_iff_right_proj () in
-  let c = Reductionops.whd_beta Evd.empty (mkApp (c,Termops.extended_rel_vect 0 sign)) in
+  let c = Reductionops.whd_beta Evd.empty (mkApp(c,Sign.args_of_rel_context 0 sign)) in
   let c = it_mkLambda_or_LetIn
     (mkApp (p,[|mkArrow a (lift 1 b);mkArrow b (lift 1 a);c|])) sign in
   let id =

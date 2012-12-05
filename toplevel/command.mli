@@ -62,10 +62,13 @@ val declare_assumptions : variable Loc.located list ->
 (** Extracting the semantical components out of the raw syntax of mutual
    inductive declarations *)
 
+type path_cons_expr = local_binder list * constr_expr * constr_expr
+
 type structured_one_inductive_expr = {
   ind_name : identifier;
   ind_arity : constr_expr;
-  ind_lc : (identifier * constr_expr) list
+  ind_lc : (identifier * constr_expr) list;
+  ind_lpc : (identifier * path_cons_expr) list
 }
 
 type structured_inductive_expr =

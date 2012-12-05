@@ -656,6 +656,16 @@ let print_constructors envpar names types =
   in
   hv 0 (str "  " ++ pc)
 
+let print_path_constructors env pcn pl =
+  let pc = List.combine (Array.to_list pcn) (Array.to_list pl) in
+  let pr_cstr (cn,pty) =
+    let (args,ccl) = decompose_prod_assum pty in
+    hov 2 (pr_id cn ++ spc() ++pr_rel_context env args ++
+	     str " :" ++ spc() ++ pr_lconstr_env (push_rel_context args env) ccl) in
+  fnl() ++ str"and paths := " ++
+    prlist_with_sep (fun _ -> fnl()++str" | ") pr_cstr pc
+
+
 let build_ind_type env mip =
   match mip.mind_arity with
     | Monomorphic ar -> ar.mind_user_arity
@@ -665,15 +675,19 @@ let build_ind_type env mip =
 let print_one_inductive env mib ((_,i) as ind) =
   let mip = mib.mind_packets.(i) in
   let params = mib.mind_params_ctxt in
-  let args = extended_rel_list 0 params in
-  let arity = hnf_prod_applist env (build_ind_type env mip) args in
+  let args = Sign.args_of_rel_context 0 params in
+  let arity = hnf_prod_appvect env (build_ind_type env mip) args in
   let cstrtypes = Inductive.type_of_constructors ind (mib,mip) in
-  let cstrtypes = Array.map (fun c -> hnf_prod_applist env c args) cstrtypes in
+  let cstrtypes = Array.map (fun c -> hnf_prod_appvect env c args) cstrtypes in
+  let pcstrtypes = Inductive.arities_of_path_constructors ind (mib,mip) in
+  let pcstrtypes = Array.map (fun c -> hnf_prod_appvect env c args) pcstrtypes in
+  let pcnames = Array.map (fun pc -> pc.c1_name) mip.mind_pathcons in
   let envpar = push_rel_context params env in
   hov 0 (
     pr_id mip.mind_typename ++ brk(1,4) ++ print_params env params ++
     str ": " ++ pr_lconstr_env envpar arity ++ str " :=") ++
-  brk(0,2) ++ print_constructors envpar mip.mind_consnames cstrtypes
+  brk(0,2) ++ print_constructors envpar mip.mind_consnames cstrtypes ++
+    (if pcstrtypes=[||] then mt() else print_path_constructors envpar pcnames pcstrtypes)
 
 let print_mutual_inductive env mind mib =
   let inds = List.tabulate (fun x -> (mind,x)) (Array.length mib.mind_packets)
@@ -700,10 +714,10 @@ let get_fields =
 let print_record env mind mib =
   let mip = mib.mind_packets.(0) in
   let params = mib.mind_params_ctxt in
-  let args = extended_rel_list 0 params in
-  let arity = hnf_prod_applist env (build_ind_type env mip) args in
+  let args = Sign.args_of_rel_context 0 params in
+  let arity = hnf_prod_appvect env (build_ind_type env mip) args in
   let cstrtypes = Inductive.type_of_constructors (mind,0) (mib,mip) in
-  let cstrtype = hnf_prod_applist env cstrtypes.(0) args in
+  let cstrtype = hnf_prod_appvect env cstrtypes.(0) args in
   let fields = get_fields cstrtype in
   let envpar = push_rel_context params env in
   hov 0 (

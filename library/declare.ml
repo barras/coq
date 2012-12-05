@@ -45,7 +45,7 @@ let set_xml_declare_constant f = xml_declare_constant := if_xml f
 let set_xml_declare_inductive f = xml_declare_inductive := if_xml f
 
 let cache_hook = ref ignore
-let add_cache_hook f = cache_hook := f
+let add_cache_hook f = (*cache_hook := f*)()
 
 (** Declaration of section variables and local definitions *)
 
@@ -207,6 +207,7 @@ let inductive_names sp kn mie =
     List.fold_left
       (fun (names, n) ind ->
 	 let ind_p = (kn,n) in
+	 let path_offset = List.length ind.mind_entry_consnames in
 	 let names, _ =
 	   List.fold_left
 	     (fun (names, p) l ->
@@ -215,6 +216,14 @@ let inductive_names sp kn mie =
 		in
 		  ((sp, ConstructRef (ind_p,p)) :: names, p+1))
 	     (names, 1) ind.mind_entry_consnames in
+	 let names, _ =
+	   List.fold_left
+	     (fun (names,p) (l,_) ->
+		let sp =
+		  Libnames.make_path dp l
+		in
+		  ((sp, ConstructRef (ind_p,p)) :: names, p+1))
+	     (names, 1+path_offset) ind.mind_entry_pathcons in
 	 let sp = Libnames.make_path dp ind.mind_entry_typename
 	 in
 	   ((sp, IndRef ind_p) :: names, n+1))
@@ -254,7 +263,8 @@ let dummy_one_inductive_entry mie = {
   mind_entry_typename = mie.mind_entry_typename;
   mind_entry_arity = mkProp;
   mind_entry_consnames = mie.mind_entry_consnames;
-  mind_entry_lc = []
+  mind_entry_lc = [];
+  mind_entry_pathcons = []
 }
 
 (* Hack to reduce the size of .vo: we keep only what load/open needs *)

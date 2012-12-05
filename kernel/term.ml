@@ -48,6 +48,8 @@ type case_info =
   { ci_ind        : inductive;
     ci_npar       : int;
     ci_cstr_ndecls : int array; (* number of pattern vars of each constructor *)
+    ci_cstr_npdecls : int array; (** number of real args of each path constructor
+                                      + 1 for the recursive match function *)
     ci_pp_info    : case_printing (* not interpreted by the kernel *)
   }
 
@@ -1418,6 +1420,7 @@ module Hcaseinfo =
 	ci.ci_ind == ci'.ci_ind &&
 	Int.equal ci.ci_npar ci'.ci_npar &&
 	Array.equal Int.equal ci.ci_cstr_ndecls ci'.ci_cstr_ndecls && (* we use [Array.equal] on purpose *)
+	Array.equal Int.equal ci.ci_cstr_npdecls ci'.ci_cstr_npdecls && (* we use [Array.equal] on purpose *)
 	pp_info_equal ci.ci_pp_info ci'.ci_pp_info  (* we use (=) on purpose *)
       let hash = Hashtbl.hash
     end)

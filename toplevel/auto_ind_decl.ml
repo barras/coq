@@ -100,8 +100,7 @@ let mkFullInd ind n =
   let lnonparrec,lnamesparrec =
     context_chop (nparams-nparrec) mib.mind_params_ctxt in
   if nparrec > 0
-    then mkApp (mkInd ind,
-      Array.of_list(extended_rel_list (nparrec+n) lnamesparrec))
+    then mkApp (mkInd ind,Sign.args_of_rel_context (nparrec+n) lnamesparrec)
     else mkInd ind
 
 let check_bool_is_defined () =
@@ -136,16 +135,16 @@ let build_beq_scheme kn =
         | Name s -> id_of_string ("eq_"^(string_of_id s))
         | Anonymous -> id_of_string "eq_A"
     in
-    let ext_rel_list = extended_rel_list 0 lnamesparrec in
-      let lift_cnt = ref 0 in
-      let eqs_typ = List.map (fun aa ->
+    let ext_rel_list = Array.to_list(Sign.args_of_rel_context 0 lnamesparrec) in
+    let lift_cnt = ref 0 in
+    let eqs_typ = List.map (fun aa ->
                                 let a = lift !lift_cnt aa in
                                   incr lift_cnt;
                                   myArrow a (myArrow a bb)
                              ) ext_rel_list in
 
-        let eq_input = List.fold_left2
-          ( fun a b (n,_,_) -> (* mkLambda(n,b,a) ) *)
+    let eq_input = List.fold_left2
+          (fun a b (n,_,_) -> (* mkLambda(n,b,a) ) *)
                 (* here I leave the Naming thingy so that the type of
                   the function is more readable for the user *)
                 mkNamedLambda (eqName n) b a )
@@ -223,13 +222,14 @@ let build_beq_scheme kn =
                ...
                Cn => match Y with ... end |]  part *)
     let ci = make_case_info env ind MatchStyle in
-    let constrs n = get_constructors env (make_ind_family (ind,
-      extended_rel_list (n+nb_ind-1) mib.mind_params_ctxt)) in
+    (* hit: drop path constructors *)
+    let constrs n = fst (get_constructors env (make_ind_family (ind,
+      Array.to_list(Sign.args_of_rel_context (n+nb_ind-1) mib.mind_params_ctxt)))) in
     let constrsi = constrs (3+nparrec) in
     let n = Array.length constrsi in
     let ar = Array.create n ff in
 	for i=0 to n-1 do
-	  let nb_cstr_args = List.length constrsi.(i).cs_args in
+	  let nb_cstr_args = List.length constrsi.(i).cs0_args in
 	  let ar2 = Array.create n ff in
           let constrsj = constrs (3+nparrec+nb_cstr_args) in
 	    for j=0 to n-1 do
@@ -238,7 +238,7 @@ let build_beq_scheme kn =
                     | 0 -> tt
                     | _ -> let eqs = Array.make nb_cstr_args tt in
                       for ndx = 0 to nb_cstr_args-1 do
-                        let _,_,cc = List.nth constrsi.(i).cs_args ndx in
+                        let _,_,cc = List.nth constrsi.(i).cs0_args ndx in
                           let eqA = compute_A_equality rel_list
                                           nparrec
                                           (nparrec+3+2*nb_cstr_args)
@@ -257,16 +257,16 @@ let build_beq_scheme kn =
                   )
    		  in
 		    (List.fold_left (fun a (p,q,r) -> mkLambda (p,r,a)) cc
-                    (constrsj.(j).cs_args)
+                    (constrsj.(j).cs0_args)
 		)
 	      else ar2.(j) <- (List.fold_left (fun a (p,q,r) ->
-			mkLambda (p,r,a)) ff (constrsj.(j).cs_args) )
+			mkLambda (p,r,a)) ff (constrsj.(j).cs0_args) )
 	    done;
 
 	  ar.(i) <- (List.fold_left (fun a (p,q,r) -> mkLambda (p,r,a))
 			(mkCase (ci,do_predicate rel_list nb_cstr_args,
 				  mkVar (id_of_string "Y") ,ar2))
-			 (constrsi.(i).cs_args))
+			 (constrsi.(i).cs0_args))
 	done;
         mkNamedLambda (id_of_string "X") (mkFullInd ind (nb_ind-1+1))  (
           mkNamedLambda (id_of_string "Y") (mkFullInd ind (nb_ind-1+2))  (

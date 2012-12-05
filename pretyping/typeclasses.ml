@@ -258,7 +258,7 @@ let build_subclasses ~check env sigma glob pri =
       match class_of_constr ty with
       | None -> []
       | Some (rels, (tc, args)) ->
-	let instapp = Reductionops.whd_beta sigma (appvectc c (Termops.extended_rel_vect 0 rels)) in
+	let instapp = Reductionops.whd_beta sigma (mkApp(c, Sign.args_of_rel_context 0 rels)) in
 	let projargs = Array.of_list (args @ [instapp]) in
 	let projs = List.map_filter 
 	  (fun (n, b, proj) ->
@@ -409,7 +409,7 @@ let add_inductive_class ind =
     let ctx = oneind.mind_arity_ctxt in
     let ty = Inductive.type_of_inductive_knowing_parameters
       (push_rel_context ctx (Global.env ()))
-	  oneind (Termops.extended_rel_vect 0 ctx)
+	  oneind (Sign.args_of_rel_context 0 ctx)
     in
       { cl_impl = IndRef ind;
 	cl_context = List.map (const None) ctx, ctx;

@@ -64,10 +64,9 @@ let fresh env id = next_global_ident_away id []
 
 let build_dependent_inductive ind (mib,mip) =
   let realargs,_ = List.chop mip.mind_nrealargs_ctxt mip.mind_arity_ctxt in
-  applist
-    (mkInd ind,
-       extended_rel_list mip.mind_nrealargs_ctxt mib.mind_params_ctxt
-       @ extended_rel_list 0 realargs)
+  mkApp(mkApp(mkInd ind,
+	      Sign.args_of_rel_context mip.mind_nrealargs_ctxt mib.mind_params_ctxt),
+       Sign.args_of_rel_context 0 realargs)
 
 let my_it_mkLambda_or_LetIn s c = it_mkLambda_or_LetIn c s
 let my_it_mkProd_or_LetIn s c = it_mkProd_or_LetIn c s
@@ -158,7 +157,7 @@ let build_sym_scheme env ind =
   let (mib,mip as specif),nrealargs,realsign,paramsctxt,paramsctxt1 =
     get_sym_eq_data env ind in
   let cstr n =
-    mkApp (mkConstruct(ind,1),extended_rel_vect n mib.mind_params_ctxt) in
+    mkApp (mkConstruct(ind,1),Sign.args_of_rel_context n mib.mind_params_ctxt) in
   let varH = fresh env (default_id_of_sort (snd (mind_arity mip))) in
   let applied_ind = build_dependent_inductive ind specif in
   let realsign_ind =
@@ -170,7 +169,7 @@ let build_sym_scheme env ind =
      my_it_mkLambda_or_LetIn_name
        (lift_rel_context (nrealargs+1) realsign_ind)
        (mkApp (mkInd ind,Array.concat
-	  [extended_rel_vect (3*nrealargs+2) paramsctxt1;
+	  [Sign.args_of_rel_context (3*nrealargs+2) paramsctxt1;
 	   rel_vect 1 nrealargs;
 	   rel_vect (2*nrealargs+2) nrealargs])),
      mkRel 1 (* varH *),
@@ -201,14 +200,13 @@ let build_sym_involutive_scheme env ind =
     get_sym_eq_data env ind in
   let sym = mkConst (find_scheme sym_scheme_kind ind) in
   let (eq,eqrefl) = get_coq_eq () in
-  let cstr n = mkApp (mkConstruct(ind,1),extended_rel_vect n paramsctxt) in
+  let cstr n = mkApp (mkConstruct(ind,1),Sign.args_of_rel_context n paramsctxt) in
   let varH = fresh env (default_id_of_sort (snd (mind_arity mip))) in
   let applied_ind = build_dependent_inductive ind specif in
   let applied_ind_C =
     mkApp
-      (mkInd ind, Array.append
-         (extended_rel_vect (nrealargs+1) mib.mind_params_ctxt)
-         (rel_vect (nrealargs+1) nrealargs)) in
+      (mkApp(mkInd ind,Sign.args_of_rel_context (nrealargs+1) mib.mind_params_ctxt),
+       rel_vect (nrealargs+1) nrealargs) in
   let realsign_ind =
     name_context env ((Name varH,None,applied_ind)::realsign) in
   let ci = make_case_info (Global.env()) ind RegularStyle in
@@ -220,15 +218,15 @@ let build_sym_involutive_scheme env ind =
        (mkApp (eq,[|
 	 mkApp
 	   (mkInd ind, Array.concat
-	     [extended_rel_vect (3*nrealargs+2) paramsctxt1;
+	     [Sign.args_of_rel_context (3*nrealargs+2) paramsctxt1;
 	      rel_vect (2*nrealargs+2) nrealargs;
 	      rel_vect 1 nrealargs]);
          mkApp (sym,Array.concat
-	   [extended_rel_vect (3*nrealargs+2) paramsctxt1;
+	   [Sign.args_of_rel_context (3*nrealargs+2) paramsctxt1;
             rel_vect 1 nrealargs;
             rel_vect (2*nrealargs+2) nrealargs;
             [|mkApp (sym,Array.concat
-	      [extended_rel_vect (3*nrealargs+2) paramsctxt1;
+	      [Sign.args_of_rel_context (3*nrealargs+2) paramsctxt1;
 	       rel_vect (2*nrealargs+2) nrealargs;
 	       rel_vect 1 nrealargs;
 	       [|mkRel 1|]])|]]);
@@ -308,7 +306,7 @@ let build_l2r_rew_scheme dep env ind kind =
   let (eq,eqrefl) = get_coq_eq () in
   let cstr n p =
     mkApp (mkConstruct(ind,1),
-      Array.concat [extended_rel_vect n paramsctxt1;
+      Array.concat [Sign.args_of_rel_context n paramsctxt1;
                     rel_vect p nrealargs]) in
   let varH = fresh env (default_id_of_sort (snd (mind_arity mip))) in
   let varHC = fresh env (id_of_string "HC") in
@@ -316,12 +314,12 @@ let build_l2r_rew_scheme dep env ind kind =
   let applied_ind = build_dependent_inductive ind specif in
   let applied_ind_P =
     mkApp (mkInd ind, Array.concat
-       [extended_rel_vect (3*nrealargs) paramsctxt1;
+       [Sign.args_of_rel_context (3*nrealargs) paramsctxt1;
         rel_vect 0 nrealargs;
         rel_vect nrealargs nrealargs]) in
   let applied_ind_G =
     mkApp (mkInd ind, Array.concat
-       [extended_rel_vect (3*nrealargs+3) paramsctxt1;
+       [Sign.args_of_rel_context (3*nrealargs+3) paramsctxt1;
         rel_vect (nrealargs+3) nrealargs;
         rel_vect 0 nrealargs]) in
   let realsign_P = lift_rel_context nrealargs realsign in
@@ -332,10 +330,10 @@ let build_l2r_rew_scheme dep env ind kind =
                       lift_rel_context (nrealargs+3) realsign) in
   let applied_sym_C n =
      mkApp(sym,
-       Array.append (extended_rel_vect n mip.mind_arity_ctxt) [|mkVar varH|]) in
+       Array.append (Sign.args_of_rel_context n mip.mind_arity_ctxt) [|mkVar varH|]) in
   let applied_sym_G =
      mkApp(sym,
-       Array.concat [extended_rel_vect (nrealargs*3+4) paramsctxt1;
+       Array.concat [Sign.args_of_rel_context (nrealargs*3+4) paramsctxt1;
                      rel_vect (nrealargs+4) nrealargs;
                      rel_vect 1 nrealargs;
 		     [|mkRel 1|]]) in
@@ -343,7 +341,7 @@ let build_l2r_rew_scheme dep env ind kind =
   let ci = make_case_info (Global.env()) ind RegularStyle in
   let cieq = make_case_info (Global.env()) (destInd eq) RegularStyle in
   let applied_PC =
-    mkApp (mkVar varP,Array.append (extended_rel_vect 1 realsign)
+    mkApp (mkVar varP,Array.append (Sign.args_of_rel_context 1 realsign)
            (if dep then [|cstr (2*nrealargs+1) 1|] else [||])) in
   let applied_PG =
     mkApp (mkVar varP,Array.append (rel_vect 1 nrealargs)
@@ -353,11 +351,11 @@ let build_l2r_rew_scheme dep env ind kind =
            (if dep then [|mkRel 2|] else [||])) in
   let applied_sym_sym =
          mkApp (sym,Array.concat
-	   [extended_rel_vect (2*nrealargs+4) paramsctxt1;
+	   [Sign.args_of_rel_context (2*nrealargs+4) paramsctxt1;
             rel_vect 4 nrealargs;
             rel_vect (nrealargs+4) nrealargs;
             [|mkApp (sym,Array.concat
-	      [extended_rel_vect (2*nrealargs+4) paramsctxt1;
+	      [Sign.args_of_rel_context (2*nrealargs+4) paramsctxt1;
 	       rel_vect (nrealargs+4) nrealargs;
 	       rel_vect 4 nrealargs;
 	       [|mkRel 2|]])|]]) in
@@ -379,7 +377,7 @@ let build_l2r_rew_scheme dep env ind kind =
                    mkApp (eq,[|lift 4 applied_ind;applied_sym_sym;mkRel 1|]),
                    applied_PR)),
        mkApp (sym_involutive,
-         Array.append (extended_rel_vect 3 mip.mind_arity_ctxt) [|mkVar varH|]),
+         Array.append (Sign.args_of_rel_context 3 mip.mind_arity_ctxt) [|mkVar varH|]),
        [|main_body|])
    else
      main_body))))))
@@ -415,7 +413,7 @@ let build_l2r_forward_rew_scheme dep env ind kind =
     get_sym_eq_data env ind in
   let cstr n p =
     mkApp (mkConstruct(ind,1),
-      Array.concat [extended_rel_vect n paramsctxt1;
+      Array.concat [Sign.args_of_rel_context n paramsctxt1;
                     rel_vect p nrealargs]) in
   let varH = fresh env (default_id_of_sort (snd (mind_arity mip))) in
   let varHC = fresh env (id_of_string "HC") in
@@ -423,12 +421,12 @@ let build_l2r_forward_rew_scheme dep env ind kind =
   let applied_ind = build_dependent_inductive ind specif in
   let applied_ind_P =
     mkApp (mkInd ind, Array.concat
-       [extended_rel_vect (4*nrealargs+2) paramsctxt1;
+       [Sign.args_of_rel_context (4*nrealargs+2) paramsctxt1;
         rel_vect 0 nrealargs;
         rel_vect (nrealargs+1) nrealargs]) in
   let applied_ind_P' =
     mkApp (mkInd ind, Array.concat
-       [extended_rel_vect (3*nrealargs+1) paramsctxt1;
+       [Sign.args_of_rel_context (3*nrealargs+1) paramsctxt1;
         rel_vect 0 nrealargs;
         rel_vect (2*nrealargs+1) nrealargs]) in
   let realsign_P n = lift_rel_context (nrealargs*n+n) realsign in
@@ -501,7 +499,7 @@ let build_r2l_forward_rew_scheme dep env ind kind =
   let ((mib,mip as specif),constrargs,realsign,nrealargs) =
     get_non_sym_eq_data env ind in
   let cstr n =
-    mkApp (mkConstruct(ind,1),extended_rel_vect n mib.mind_params_ctxt) in
+    mkApp (mkConstruct(ind,1),Sign.args_of_rel_context n mib.mind_params_ctxt) in
   let constrargs_cstr = constrargs@[cstr 0] in
   let varH = fresh env (default_id_of_sort (snd (mind_arity mip))) in
   let varHC = fresh env (id_of_string "HC") in
@@ -515,8 +513,8 @@ let build_r2l_forward_rew_scheme dep env ind kind =
     applist (mkVar varP,if dep then constrargs_cstr else constrargs) in
   let applied_PG =
     mkApp (mkVar varP,
-           if dep then extended_rel_vect 0 realsign_ind
-	   else extended_rel_vect 1 realsign) in
+           if dep then Sign.args_of_rel_context 0 realsign_ind
+	   else Sign.args_of_rel_context 1 realsign) in
   (my_it_mkLambda_or_LetIn mib.mind_params_ctxt
   (my_it_mkLambda_or_LetIn_name realsign_ind
   (mkNamedLambda varP
@@ -561,8 +559,8 @@ let fix_r2l_forward_rew_scheme c =
 	  (mkLambda_or_LetIn (map_rel_declaration (liftn (-1) 2) hp)
 	    (mkLambda_or_LetIn (map_rel_declaration (lift 2) ind)
 	      (Reductionops.whd_beta Evd.empty
-		(applist (c,
-	          extended_rel_list 3 indargs @ [mkRel 1;mkRel 3;mkRel 2]))))))
+		(mkApp(mkApp(c,Sign.args_of_rel_context 3 indargs),
+		       [|mkRel 1;mkRel 3;mkRel 2|]))))))
   | _ -> anomaly "Ill-formed non-dependent left-to-right rewriting scheme"
 
 (**********************************************************************)
@@ -700,20 +698,17 @@ let build_congr env (eq,refl) ind =
      (mkNamedLambda varf (mkArrow (lift 1 ty) (mkVar varB))
      (my_it_mkLambda_or_LetIn_name (lift_rel_context 2 realsign)
      (mkNamedLambda varH
-        (applist
-           (mkInd ind,
-	    extended_rel_list (mip.mind_nrealargs+2) mib.mind_params_ctxt @
-	    extended_rel_list 0 realsign))
+        (mkApp(mkApp(mkInd ind,Sign.args_of_rel_context (mip.mind_nrealargs+2) mib.mind_params_ctxt),
+	       Sign.args_of_rel_context 0 realsign))
      (mkCase (ci,
        my_it_mkLambda_or_LetIn_name
 	 (lift_rel_context (mip.mind_nrealargs+3) realsign)
          (mkLambda
            (Anonymous,
-            applist
-             (mkInd ind,
-	        extended_rel_list (2*mip.mind_nrealargs_ctxt+3)
-		  mib.mind_params_ctxt
-	        @ extended_rel_list 0 realsign),
+            mkApp(mkApp(mkInd ind,
+			Sign.args_of_rel_context(2*mip.mind_nrealargs_ctxt+3)
+			  mib.mind_params_ctxt),
+	          Sign.args_of_rel_context 0 realsign),
             mkApp (eq,
 	      [|mkVar varB;
                 mkApp (mkVar varf, [|lift (2*mip.mind_nrealargs_ctxt+4) b|]);

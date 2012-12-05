@@ -499,16 +499,17 @@ let rec pretype (tycon : type_constraint) env evdref lvar = function
 	  let cloc = loc_of_glob_constr c in
 	    error_case_not_inductive_loc cloc env !evdref cj
       in
-      let cstrs = get_constructors env indf in
+      (* hit: drop path constructors *)
+      let (cstrs,_) = get_constructors env indf in
 	if not (Int.equal (Array.length cstrs) 1) then
           user_err_loc (loc,"",str "Destructing let is only for inductive types" ++
 			str " with one constructor.");
 	let cs = cstrs.(0) in
-	  if not (Int.equal (List.length nal) cs.cs_nargs) then
+	  if not (Int.equal (List.length nal) cs.cs0_nargs) then
             user_err_loc (loc,"", str "Destructing let on this type expects " ++ 
-			    int cs.cs_nargs ++ str " variables.");
+			    int cs.cs0_nargs ++ str " variables.");
 	  let fsign = List.map2 (fun na (_,c,t) -> (na,c,t))
-            (List.rev nal) cs.cs_args in
+            (List.rev nal) cs.cs0_args in
 	  let env_f = push_rel_context fsign env in
 	    (* Make dependencies from arity signature impossible *)
 	  let arsgn =
@@ -527,9 +528,9 @@ let rec pretype (tycon : type_constraint) env evdref lvar = function
 		 let psign = make_arity_signature env true indf in (* with names *)
 		 let p = it_mkLambda_or_LetIn ccl psign in
 		 let inst =
-		   (Array.to_list cs.cs_concl_realargs)
+		   (Array.to_list cs.cs0_concl_realargs)
 		   @[build_dependent_constructor cs] in
-		 let lp = lift cs.cs_nargs p in
+		 let lp = lift cs.cs0_nargs p in
 		 let fty = hnf_lam_applist env !evdref lp inst in
 		 let fj = pretype (mk_tycon fty) env_f evdref lvar d in
 		 let f = it_mkLambda_or_LetIn fj.uj_val fsign in
@@ -541,13 +542,13 @@ let rec pretype (tycon : type_constraint) env evdref lvar = function
 		   { uj_val = v; uj_type = substl (realargs@[cj.uj_val]) ccl }
 
 	     | None ->
-		 let tycon = lift_tycon cs.cs_nargs tycon in
+		 let tycon = lift_tycon cs.cs0_nargs tycon in
 		 let fj = pretype tycon env_f evdref lvar d in
 		 let f = it_mkLambda_or_LetIn fj.uj_val fsign in
 		 let ccl = nf_evar !evdref fj.uj_type in
 		 let ccl =
-		   if noccur_between 1 cs.cs_nargs ccl then
-		     lift (- cs.cs_nargs) ccl
+		   if noccur_between 1 cs.cs0_nargs ccl then
+		     lift (- cs.cs0_nargs) ccl
 		   else
 		     error_cant_find_case_type_loc loc env !evdref
 		       cj.uj_val in
@@ -567,7 +568,8 @@ let rec pretype (tycon : type_constraint) env evdref lvar = function
 	with Not_found ->
 	  let cloc = loc_of_glob_constr c in
 	    error_case_not_inductive_loc cloc env !evdref cj in
-      let cstrs = get_constructors env indf in
+      (* hit: drop path constructors *)
+      let (cstrs,_) = get_constructors env indf in
 	if not (Int.equal (Array.length cstrs) 2) then
           user_err_loc (loc,"",
 			str "If is only for inductive types with two constructors.");
@@ -598,23 +600,23 @@ let rec pretype (tycon : type_constraint) env evdref lvar = function
 	let pred = nf_evar !evdref pred in
 	let p = nf_evar !evdref p in
 	let f cs b =
-	  let n = rel_context_length cs.cs_args in
+	  let n = rel_context_length cs.cs0_args in
 	  let pi = lift n pred in (* liftn n 2 pred ? *)
 	  let pi = beta_applist (pi, [build_dependent_constructor cs]) in
 	  let csgn =
 	    if not !allow_anonymous_refs then
-	      List.map (fun (_,b,t) -> (Anonymous,b,t)) cs.cs_args
+	      List.map (fun (_,b,t) -> (Anonymous,b,t)) cs.cs0_args
 	    else
 	      List.map
 		(fun (n, b, t) ->
 		   match n with
                    Name _ -> (n, b, t)
                    | Anonymous -> (Name (id_of_string "H"), b, t))
-		cs.cs_args
+		cs.cs0_args
 	  in
 	  let env_c = push_rel_context csgn env in
 	  let bj = pretype (mk_tycon pi) env_c evdref lvar b in
-	    it_mkLambda_or_LetIn bj.uj_val cs.cs_args in
+	    it_mkLambda_or_LetIn bj.uj_val cs.cs0_args in
 	let b1 = f cstrs.(0) b1 in
 	let b2 = f cstrs.(1) b2 in
 	let v =

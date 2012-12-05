@@ -172,7 +172,7 @@ type 'a miota_args = {
   mcargs  : 'a list;    (** the constructor's arguments *)
   mlf     : 'a array }  (** the branch code vector *)
 
-val reducible_mind_case : constr -> bool
+val reducible_mind_case : inductive option -> constr -> bool
 val reduce_mind_case : constr miota_args -> constr
 
 val find_conclusion : env -> evar_map -> constr -> (constr,constr) kind_of_term

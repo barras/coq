@@ -57,8 +57,17 @@ val map_rel_context : (constr -> constr) -> rel_context -> rel_context
 (** {6 Map function of [named_context] } *)
 val map_named_context : (constr -> constr) -> named_context -> named_context
 
-(** {6 Map function of [rel_context] } *)
+(** {6 Iter function of [rel_context] } *)
 val iter_rel_context : (constr -> unit) -> rel_context -> unit
 
-(** {6 Map function of [named_context] } *)
+(** {6 Iter function of [named_context] } *)
 val iter_named_context : (constr -> unit) -> named_context -> unit
+
+(** {7 Substitution and telescope operations} *)
+
+(** Generate a substitution instantiating a rel_context from an array of
+    arguments *)
+val subst_of_rel_context_args : rel_context -> constr array -> constr list
+(** Generate an array of arguments that instantiate the given context,
+   under the given number of binders (was extended_rel_list). *)
+val args_of_rel_context : int -> rel_context -> constr array

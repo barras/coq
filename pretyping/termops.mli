@@ -48,8 +48,6 @@ val lookup_rel_id : identifier -> rel_context -> int * constr option * types
 (** builds argument lists matching a block of binders or a context *)
 val rel_vect : int -> int -> constr array
 val rel_list : int -> int -> constr list
-val extended_rel_list : int -> rel_context -> constr list
-val extended_rel_vect : int -> rel_context -> constr array
 
 (** iterators/destructors on terms *)
 val mkProd_or_LetIn : rel_declaration -> types -> types

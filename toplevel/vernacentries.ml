@@ -535,17 +535,19 @@ let vernac_inductive finite infer indl =
   if Dumpglob.dump () then
     List.iter (fun (((coe,lid), _, _, _, cstrs), _) ->
       match cstrs with
-	| Constructors cstrs ->
+	| Constructors (cstrs,pcstrs) ->
 	    Dumpglob.dump_definition lid false "ind";
 	    List.iter (fun (_, (lid, _)) ->
-			 Dumpglob.dump_definition lid false "constr") cstrs
+			 Dumpglob.dump_definition lid false "constr") cstrs;
+	    List.iter (fun (lid, _) ->
+			 Dumpglob.dump_definition lid false "constr") pcstrs;
 	| _ -> () (* dumping is done by vernac_record (called below) *) )
       indl;
   match indl with
   | [ ( id , bl , c , b, RecordDecl (oc,fs) ), [] ] ->
       vernac_record (match b with Class true -> Class false | _ -> b)
 	finite infer id bl c oc fs
-  | [ ( id , bl , c , Class true, Constructors [l]), _ ] ->
+  | [ ( id , bl , c , Class true, Constructors ([l],[])), _ ] ->
       let f =
 	let (coe, ((loc, id), ce)) = l in
 	let coe' = if coe then Some true else None in
@@ -558,7 +560,7 @@ let vernac_inductive finite infer indl =
   | [ ( _ , _ , _ , _, RecordDecl _ ) , _ ] ->
       Errors.error "where clause not supported for (co)inductive records"
   | _ -> let unpack = function
-      | ( (_, id) , bl , c , _ , Constructors l ) , ntn  -> ( id , bl , c , l ) , ntn
+      | ( (_, id) , bl , c , _ , Constructors (l,pl) ) , ntn  -> ( id , bl , c , l, pl ) , ntn
       | _ -> Errors.error "Cannot handle mutually (co)inductive records."
     in
     let indl = List.map unpack indl in

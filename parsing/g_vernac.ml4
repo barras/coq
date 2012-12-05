@@ -266,15 +266,28 @@ GEXTEND Gram
 	   (((oc,id),indpar,c,lc),ntn) ] ]
   ;
   constructor_list_or_record_decl:
-    [ [ "|"; l = LIST1 constructor SEP "|" -> Constructors l
-      | id = identref ; c = constructor_type; "|"; l = LIST0 constructor SEP "|" ->
-	  Constructors ((c id)::l)
-      | id = identref ; c = constructor_type -> Constructors [ c id ]
+    [ [ "|"; l = LIST1 constructor SEP "|"; pl = path_constructor_list -> Constructors(l,pl)
+      | id = identref ; c = constructor_type; "|"; l = LIST0 constructor SEP "|";
+	pl = path_constructor_list ->
+	  Constructors((c id)::l, pl)
+      | id = identref ; c = constructor_type; pl = path_constructor_list -> Constructors([c id],pl)
       | cstr = identref; "{"; fs = LIST0 record_field SEP ";"; "}" ->
 	  RecordDecl (Some cstr,fs)
       | "{";fs = LIST0 record_field SEP ";"; "}" -> RecordDecl (None,fs)
-      |  -> Constructors [] ] ]
+      |  -> Constructors ([],[]) ] ]
   ;
+  path_constructor_list:
+    [ [ -> []
+      | "with"; IDENT"paths"; ":="; pl = paths -> pl ] ]
+  ;
+  paths:
+    [ [ -> []
+      | "|"; l = LIST1 path_constructor SEP "|" -> l
+      | id = identref ; c = path_constructor_type; "|";
+	l = LIST0 path_constructor SEP "|" -> ((id,c)::l)
+      | id = identref ; c = path_constructor_type -> [id,c] ] ]
+  ;
+
 (*
   csort:
     [ [ s = sort -> CSort (loc,s) ] ]
@@ -370,10 +383,16 @@ GEXTEND Gram
 		 fun l id -> (false,(id,mkCProdN (!@loc) l (CHole (!@loc, None)))) ]
 	 -> t l
      ]]
-;
+  ;
 
   constructor:
     [ [ id = identref; c=constructor_type -> c id ] ]
+  ;
+
+  path_constructor_type:
+    [[ l = binders; ":"; lhs = constr ; "="; rhs = constr -> (l,lhs,rhs) ]];
+  path_constructor:
+    [ [ id = identref; c=path_constructor_type -> (id,c) ] ]
   ;
   of_type_with_opt_coercion:
     [ [ ":>>" -> Some false

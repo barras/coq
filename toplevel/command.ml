@@ -209,10 +209,14 @@ let push_types env idl tl =
   List.fold_left2 (fun env id t -> Environ.push_rel (Name id,None,t) env)
     env idl tl
 
+type path_cons_expr =
+    local_binder list * constr_expr * constr_expr
+
 type structured_one_inductive_expr = {
   ind_name : identifier;
   ind_arity : constr_expr;
-  ind_lc : (identifier * constr_expr) list
+  ind_lc : (identifier * constr_expr) list;
+  ind_lpc : (identifier * path_cons_expr) list
 }
 
 type structured_inductive_expr =
@@ -226,7 +230,9 @@ let minductive_message = function
 
 let check_all_names_different indl =
   let ind_names = List.map (fun ind -> ind.ind_name) indl in
-  let cstr_names = List.map_append (fun ind -> List.map fst ind.ind_lc) indl in
+  let cstr_names =
+    List.map_append (fun ind -> List.map fst ind.ind_lc) indl @
+    List.map_append (fun ind -> List.map fst ind.ind_lpc) indl in
   let l = List.duplicates ind_names in
   let () = match l with
   | [] -> ()
@@ -261,6 +267,22 @@ let interp_cstrs evdref env impls mldata arity ind =
   let ctyps'', cimpls = List.split (List.map (interp_type_evars_impls ~evdref env ~impls) ctyps') in
     (cnames, ctyps'', cimpls)
 
+let context_of_list ln lc =
+  List.rev (CList.map2_i (fun i na ty -> (Name na, None, lift i ty)) 0 ln lc)
+
+let interp_path_cons evdref env impls (cn,(args,lhs,rhs)) =
+  let (impls',((env',args),cimpls)) = interp_context_evars ~impl_env:impls evdref env args in
+  let lhs,_ = interp_constr_evars_impls ~evdref env' ~impls:impls' lhs in
+  let rhs,_ = interp_constr_evars_impls ~evdref env' ~impls:impls' rhs in
+  (cn,(List.map prepare_param args,lhs,rhs)), cimpls
+
+let interp_path_cstrs evdref env impls mldata arity ind (cnames,cons,cimpls) =
+  (* and the constructor impls ? *)
+  let cstr_ctxt = context_of_list cnames cons in
+  let env_ar_par_cstr = push_rel_context cstr_ctxt env in
+  List.split (List.map (interp_path_cons evdref env_ar_par_cstr impls) ind.ind_lpc)
+
+
 let interp_mutual_inductive (paramsl,indl) notations finite =
   check_all_names_different indl;
   let env0 = Global.env() in
@@ -294,11 +316,28 @@ let interp_mutual_inductive (paramsl,indl) notations finite =
      List.map3 (interp_cstrs evdref env_ar_params impls) mldatas arities indl)
      () in
 
+  let path_constructors =
+    Metasyntax.with_syntax_protection (fun () ->
+     (* Temporary declaration of notations and scopes *)
+     List.iter (Metasyntax.set_notation_for_interpretation impls) notations;
+     (* Interpret the path constructor types *)
+     (* Actually the constructors of all mutual need to be considered when
+        checking the path constructors... TODO *) 
+     List.map4 (interp_path_cstrs evdref env_ar_params impls) mldatas arities indl constructors)
+     () in
+
   (* Instantiate evars and check all are resolved *)
   let evd = consider_remaining_unif_problems env_params !evdref in
   let evd = Typeclasses.resolve_typeclasses ~filter:Typeclasses.no_goals ~fail:true env_params evd in
   let sigma = evd in
-  let constructors = List.map (fun (idl,cl,impsl) -> (idl,List.map (nf_evar sigma) cl,impsl)) constructors in
+  let constructors =
+    List.map (fun (idl,cl,impsl) -> (idl,List.map (nf_evar sigma) cl,impsl)) constructors in
+  let path_constructors =
+    let nfb = function
+      | (na,LocalDef b) -> (na, LocalDef (nf_evar sigma b))
+      | (na,LocalAssum b) -> (na,LocalAssum (nf_evar sigma b)) in
+    let nfc (cn,(bl,lhs,rhs)) = (cn,(List.map nfb bl, nf_evar sigma lhs, nf_evar sigma rhs)) in
+    List.map (fun (cl,impsl) -> (List.map nfc cl,impsl)) path_constructors in
   let ctx_params = Sign.map_rel_context (nf_evar sigma) ctx_params in
   let arities = List.map (nf_evar sigma) arities in
   List.iter (check_evars env_params Evd.empty evd) arities;
@@ -308,12 +347,13 @@ let interp_mutual_inductive (paramsl,indl) notations finite =
     constructors;
 
   (* Build the inductive entries *)
-  let entries = List.map3 (fun ind arity (cnames,ctypes,cimpls) -> {
+  let entries = List.map4 (fun ind arity (cnames,ctypes,cimpls) (lpc,pcimpls) -> {
     mind_entry_typename = ind.ind_name;
     mind_entry_arity = arity;
     mind_entry_consnames = cnames;
-    mind_entry_lc = ctypes
-  }) indl arities constructors in
+    mind_entry_lc = ctypes;
+    mind_entry_pathcons = lpc
+  }) indl arities constructors path_constructors in
   let impls =
     let len = rel_context_nhyps ctx_params in
       List.map2 (fun indimpls (_,_,cimpls) ->
@@ -344,10 +384,10 @@ let eq_local_binders bl1 bl2 =
 let extract_coercions indl =
   let mkqid (_,((_,id),_)) = qualid_of_ident id in
   let extract lc = List.filter (fun (iscoe,_) -> iscoe) lc in
-  List.map mkqid (List.flatten(List.map (fun (_,_,_,lc) -> extract lc) indl))
+  List.map mkqid (List.flatten(List.map (fun (_,_,_,lc,_) -> extract lc) indl))
 
 let extract_params indl =
-  let paramsl = List.map (fun (_,params,_,_) -> params) indl in
+  let paramsl = List.map (fun (_,params,_,_,_) -> params) indl in
   match paramsl with
   | [] -> anomaly "empty list of inductive types"
   | params::paramsl ->
@@ -356,10 +396,11 @@ let extract_params indl =
       params
 
 let extract_inductive indl =
-  List.map (fun ((_,indname),_,ar,lc) -> {
+  List.map (fun ((_,indname),_,ar,lc,lpc) -> {
     ind_name = indname;
     ind_arity = Option.cata (fun x -> x) (CSort (Loc.ghost,GType None)) ar;
-    ind_lc = List.map (fun (_,((_,id),t)) -> (id,t)) lc
+    ind_lc = List.map (fun (_,((_,id),t)) -> (id,t)) lc;
+    ind_lpc = List.map (fun ((_,id),pc) -> (id,pc)) lpc
   }) indl
 
 let extract_mutual_inductive_declaration_components indl =

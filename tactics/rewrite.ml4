@@ -873,7 +873,7 @@ let subterm all flags (s : strategy) : strategy =
 		let res = make_leibniz_proof (mkCase (ci, lift 1 p, mkRel 1, Array.map (lift 1) brs)) ty r in
 		  Some (Some (coerce env avoid cstr res))
 	    | x ->
-	      if Array.for_all (Int.equal 0) ci.ci_cstr_ndecls then
+	      if Array.for_all (Int.equal 0) ci.ci_cstr_ndecls && Array.length ci.ci_cstr_npdecls = 0 then
 		let cstr = Some (mkApp (Lazy.force coq_eq, [| ty |])) in
 		let found, brs' = Array.fold_left 
 		  (fun (found, acc) br ->

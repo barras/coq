@@ -224,20 +224,24 @@ let rec no_nth_arg_available n = function
   | Zcase _ :: _ -> true
   | Zfix _ :: _ -> true
 
-let rec no_case_available = function
+let rec no_case_available oind stk =
+  match stk with
   | [] -> true
-  | Zupdate _ :: stk -> no_case_available stk
-  | Zshift _ :: stk -> no_case_available stk
-  | Zapp _ :: stk -> no_case_available stk
-  | Zcase _ :: _ -> false
+  | Zupdate _ :: stk -> no_case_available oind stk
+  | Zshift _ :: stk -> no_case_available oind stk
+  | Zapp _ :: stk -> no_case_available oind stk
+  | Zcase(ci,_,_) :: _ ->
+    (match oind with
+	Some ind -> not (eq_ind ci.ci_ind ind)
+      | None -> false)
   | Zfix _ :: _ -> true
 
 let in_whnf (t,stk) =
   match fterm_of t with
     | (FLetIn _ | FCases _ | FApp _ | FCLOS _ | FLIFT _ | FCast _) -> false
     | FLambda _ -> no_arg_available stk
-    | FConstruct _ -> no_case_available stk
-    | FCoFix _ -> no_case_available stk
+    | FConstruct (ind,_) -> no_case_available (Some ind) stk
+    | FCoFix _ -> no_case_available None stk
     | FFix(((ri,n),(_,_,_)),_) -> no_nth_arg_available ri.(n) stk
     | (FFlex _ | FProd _ | FEvar _ | FInd _ | FAtom _ | FRel _) -> true
     | FLOCKED -> assert false
@@ -514,6 +518,8 @@ let hnf_prod_app env t n =
 
 let hnf_prod_applist env t nl =
   List.fold_left (hnf_prod_app env) t nl
+let hnf_prod_appvect env t v =
+  hnf_prod_applist env t (Array.to_list v)
 
 (* Dealing with arities *)
 

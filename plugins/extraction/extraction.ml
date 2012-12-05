@@ -398,7 +398,8 @@ and extract_ind env kn = (* kn is supposed to be in long form *)
     for i = 0 to mib.mind_ntypes - 1 do
       let p = packets.(i) in
       if not p.ip_logical then
-	let types = arities_of_constructors env (kn,i) in
+	(* hit: drop path constructors *)
+	let (types,_) = arities_of_constructors env (kn,i) in
 	for j = 0 to Array.length types - 1 do
 	  let t = snd (decompose_prod_n npar types.(j)) in
 	  let prods,head = dest_prod epar t in

@@ -524,14 +524,14 @@ let special_red_case env sigma whfun (ci, p, c, lf)  =
       match reference_opt_value sigma env ref with
         | None -> raise Redelimination
         | Some gvalue ->
-	    if reducible_mind_case gvalue then
+	    if reducible_mind_case (Some ci.ci_ind) gvalue then
 	      reduce_mind_case_use_function constr env sigma
 	        {mP=p; mconstr=gvalue; mcargs=cargs;
                 mci=ci; mlf=lf}
 	    else
 	      redrec (applist(gvalue, cargs))
     else
-      if reducible_mind_case constr then
+      if reducible_mind_case (Some ci.ci_ind) constr then
         reduce_mind_case
 	  {mP=p; mconstr=constr; mcargs=cargs;
 	  mci=ci; mlf=lf}
@@ -763,7 +763,7 @@ and whd_simpl_stack env sigma =
 
 and whd_construct_stack env sigma s =
   let (constr, cargs as s') = whd_simpl_stack env sigma s in
-  if reducible_mind_case constr then s'
+  if reducible_mind_case None constr then s'
   else if isEvalRef env constr then
     let ref = destEvalRef constr in
     match reference_opt_value sigma env ref with

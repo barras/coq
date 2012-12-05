@@ -325,11 +325,11 @@ let judge_of_constructor env c =
 
 (* Case. *)
 
-let check_branch_types env ind cj (lfj,explft) =
+let check_branch_types env mkC cj (lfj,explft) =
   try conv_leq_vecti env (Array.map j_type lfj) explft
   with
       NotConvertibleVect i ->
-        error_ill_formed_branch env cj.uj_val (ind,i+1) lfj.(i).uj_type explft.(i)
+        error_ill_formed_branch env cj.uj_val (mkC i) lfj.(i).uj_type explft.(i)
     | Invalid_argument _ ->
         error_number_branches env cj (Array.length explft)
 
@@ -338,13 +338,17 @@ let judge_of_case env ci pj cj lfj =
     try find_rectype env cj.uj_type
     with Not_found -> error_case_not_inductive env cj in
   let _ = check_case_info env (fst indspec) ci in
-  let (bty,rslty,univ) =
+  let (bty,pbty,rslty,univ) =
     type_case_branches env indspec pj cj.uj_val in
-  let univ' = check_branch_types env (fst indspec) cj (lfj,bty) in
+  let lfj, lgj = Array.chop (Array.length bty) lfj in
+  let univ' = check_branch_types env (fun i -> (fst indspec,i+1)) cj (lfj,bty) in
+  let univ'' =
+    check_branch_types env (fun i -> (fst indspec,i+Array.length bty+1)) cj
+      (lgj, pbty (Array.map j_val lfj)) in
   ({ uj_val  = mkCase (ci, (*nf_betaiota*) pj.uj_val, cj.uj_val,
-                       Array.map j_val lfj);
+                       Array.append (Array.map j_val lfj) (Array.map j_val lgj));
      uj_type = rslty },
-  union_constraints univ univ')
+  union_constraints univ (union_constraints univ' univ''))
 
 (* Fixpoints. *)
 
@@ -502,21 +506,35 @@ let infer_v env cv =
 
 (* Typing of several terms. *)
 
+let cumulate_decl_univ u = function
+  | Prop Null -> u
+  | Prop Pos -> sup type0_univ u
+  | Type u' -> sup u u'
+
+let context_sort =
+  Array.fold_left cumulate_decl_univ type0m_univ
+
 let infer_local_decl env id = function
   | LocalDef c ->
       let (j,cst) = infer env c in
-      (Name id, Some j.uj_val, j.uj_type), cst
+      (Name id, Some j.uj_val, j.uj_type), None, cst
   | LocalAssum c ->
       let (j,cst) = infer env c in
-      (Name id, None, assumption_of_judgment env j), cst
+      let jt = type_judgment env j in
+      (Name id, None, jt.utj_val), Some jt.utj_type, cst
 
 let infer_local_decls env decls =
   let rec inferec env = function
-  | (id, d) :: l ->
-      let env, l, cst1 = inferec env l in
-      let d, cst2 = infer_local_decl env id d in
-      push_rel d env, add_rel_decl d l, union_constraints cst1 cst2
-  | [] -> env, empty_rel_context, empty_constraint in
+    | (id, d) :: l ->
+      let env, l, ul, cst1 = inferec env l in
+      let d, ud, cst2 = infer_local_decl env id d in
+      let u' = match ud with
+	  None -> ul
+	| Some ud -> cumulate_decl_univ ul ud in
+      push_rel d (add_constraints cst2 env),
+      add_rel_decl d l, u',
+      union_constraints cst1 cst2
+    | [] -> env, empty_rel_context, type0m_univ, empty_constraint in
   inferec env decls
 
 (* Exported typing functions *)

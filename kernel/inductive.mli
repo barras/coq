@@ -43,6 +43,7 @@ val type_of_constructor : constructor -> mind_specif -> types
 
 (** Return constructor types in normal form *)
 val arities_of_constructors : inductive -> mind_specif -> types array
+val arities_of_path_constructors : inductive -> mind_specif -> types array
 
 (** Return constructor types in user form *)
 val type_of_constructors : inductive -> mind_specif -> types array
@@ -61,11 +62,18 @@ val inductive_params : mind_specif -> int
  *)
 val type_case_branches :
   env -> inductive * constr list -> unsafe_judgment -> constr
-    -> types array * types * constraints
+    -> types array * (constr array -> types array) * types * constraints
 
 val build_branches_type :
   inductive -> mutual_inductive_body * one_inductive_body ->
     constr list -> constr -> types array
+val build_path_branches_type :
+  inductive -> mutual_inductive_body * one_inductive_body ->
+  constr array -> constr -> constr array -> types array
+val build_path_branch_type :
+  inductive -> mutual_inductive_body * one_inductive_body ->
+  constr array -> constr -> bool -> constr array ->
+  (int * rel_context * constr array * constr * constr -> types)
 
 (** Return the arity of an inductive type *)
 val mind_arity : one_inductive_body -> rel_context * sorts_family

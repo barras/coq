@@ -631,13 +631,20 @@ let rec pr_vernac = function
         hov 2 (pr_lident id ++ str" " ++
                (if coe then str":>" else str":") ++
                 pr_spc_lconstr c) in
+      let pr_path_constructor (id,(args,lhs,rhs)) =
+	hov 2 (pr_lident id ++ str" " ++ pr_and_type_binders_arg args ++ str " :" ++
+	       pr_sep_com spc pr_constr lhs ++ str " =" ++ pr_sep_com spc pr_constr rhs) in
       let pr_constructor_list b l = match l with
-        | Constructors [] -> mt()
-        | Constructors l ->
+        | Constructors ([],[]) -> mt()
+        | Constructors (l,pl) ->
             let fst_sep = match l with [_] -> "   " | _ -> " | " in
             pr_com_at (begin_of_inductive l) ++
             fnl() ++ str fst_sep ++
-            prlist_with_sep (fun _ -> fnl() ++ str" | ") pr_constructor l
+            prlist_with_sep (fun _ -> fnl() ++ str" | ") pr_constructor l ++
+	      (if pl=[] then mt() else
+		  (fnl()++str"and paths :=" ++
+		     prlist_with_sep (fun _ -> fnl()++str" | ") pr_path_constructor pl))
+
        | RecordDecl (c,fs) ->
 	    spc() ++
 	    pr_record_decl b c fs in

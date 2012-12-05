@@ -67,6 +67,7 @@ val beta_appvect : constr -> constr array -> constr
 val betazeta_appvect : int -> constr -> constr array -> constr
 
 (** Pseudo-reduction rule  Prod(x,A,B) a --> B[x\a] *)
+val hnf_prod_appvect : env -> types -> constr array -> types
 val hnf_prod_applist : env -> types -> constr list -> types
 
 

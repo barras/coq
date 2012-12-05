@@ -32,13 +32,15 @@ let type_of_constructor env cstr =
 
 (* Return constructor types in user form *)
 let type_of_constructors env ind =
- let specif = Inductive.lookup_mind_specif env ind in
-  Inductive.type_of_constructors ind specif
+  let specif = Inductive.lookup_mind_specif env ind in
+  (Inductive.type_of_constructors ind specif,
+   Inductive.arities_of_path_constructors ind specif)
 
 (* Return constructor types in normal form *)
 let arities_of_constructors env ind =
- let specif = Inductive.lookup_mind_specif env ind in
-  Inductive.arities_of_constructors ind specif
+  let specif = Inductive.lookup_mind_specif env ind in
+  (Inductive.arities_of_constructors ind specif,
+   Inductive.arities_of_path_constructors ind specif)
 
 (* [inductive_family] = [inductive_instance] applied to global parameters *)
 type inductive_family = inductive * constr list
@@ -130,11 +132,17 @@ let mis_constructor_nhyps_env env ((kn,i),j) =
 
 let constructor_nrealargs env (ind,j) =
   let (_,mip) = Inductive.lookup_mind_specif env ind in
-  recarg_length mip.mind_recargs j
-
+  if j<=Array.length mip.mind_consnames then
+    recarg_length mip.mind_recargs j
+  else
+    rel_context_nhyps (mip.mind_pathcons.(j-Array.length mip.mind_consnames-1).c1_args)+1
+    
 let constructor_nrealhyps (ind,j) =
   let (mib,mip) = Global.lookup_inductive ind in
-  mip.mind_consnrealdecls.(j-1)
+  if j<=Array.length mip.mind_consnames then
+    mip.mind_consnrealdecls.(j-1)
+  else
+    mip.mind_pconsnrealdecls.(j-Array.length mip.mind_consnames-1)
 
 let get_full_arity_sign env ind =
   let (mib,mip) = Inductive.lookup_mind_specif env ind in
@@ -144,11 +152,20 @@ let nconstructors ind =
   let (mib,mip) = Inductive.lookup_mind_specif (Global.env()) ind in
   Array.length mip.mind_consnames
 
+let npconstructors ind =
+  let (mib,mip) = Inductive.lookup_mind_specif (Global.env()) ind in
+  Array.length mip.mind_pathcons
+
 let mis_constructor_has_local_defs (indsp,j) =
   let (mib,mip) = Global.lookup_inductive indsp in
-  let l1 = mip.mind_consnrealdecls.(j-1) + rel_context_length (mib.mind_params_ctxt) in
-  let l2 = recarg_length mip.mind_recargs j + mib.mind_nparams in
-  not (Int.equal l1 l2)
+  if j <= Array.length mip.mind_consnames then
+    let l1 = mip.mind_consnrealdecls.(j-1) + rel_context_length (mib.mind_params_ctxt) in
+    let l2 = recarg_length mip.mind_recargs j + mib.mind_nparams in
+    not (Int.equal l1 l2)
+  else
+    let j' = j - Array.length mip.mind_consnames in
+    let pc = mip.mind_pathcons.(j'-1) in
+    List.exists (fun (na,b,ty) -> b<>None) pc.c1_args
 
 let inductive_has_local_defs ind =
   let (mib,mip) = Global.lookup_inductive ind in
@@ -180,25 +197,48 @@ let make_case_info env ind style =
   { ci_ind     = ind;
     ci_npar    = mib.mind_nparams;
     ci_cstr_ndecls = mip.mind_consnrealdecls;
+    ci_cstr_npdecls = mip.mind_pconsnrealdecls;
     ci_pp_info = print_info }
 
 (*s Useful functions *)
 
-type constructor_summary = {
-  cs_cstr : constructor;
-  cs_params : constr list;
-  cs_nargs : int;
-  cs_args : rel_context;
-  cs_concl_realargs : constr array
+type point_constructor_summary = {
+  cs0_cstr : constructor;    (* internal name of the constructor *)
+  cs0_params : constr list;  (* parameters of the constructor in current ctx *)
+  cs0_nargs : int;           (* length of arguments signature (letin included) *)
+  cs0_args : rel_context;    (* signature of the arguments (letin included) *)
+  cs0_concl_realargs : constr array; (* actual realargs in the concl of cstr *)
+}
+type path_constructor_summary = {
+  cs1_cstr : constructor;    (* internal name of the constructor *)
+  cs1_params : constr list;  (* parameters of the constructor in current ctx *)
+  cs1_nargs : int;           (* length of arguments signature (letin included) *)
+  cs1_args : rel_context;    (* signature of the arguments (letin included) *)
+  cs1_inst : constr array;   (* instance of the equation *)
+  cs1_lhs : constr;          (* lhs of path *)
+  cs1_rhs : constr;          (* rhs of path *)
+}
+type constructor_summary =
+  | Point of point_constructor_summary
+  | Path of path_constructor_summary
+
+let lift_point_constructor n cs = {
+  cs0_cstr = cs.cs0_cstr;
+  cs0_params = List.map (lift n) cs.cs0_params;
+  cs0_nargs = cs.cs0_nargs;
+  cs0_args = lift_rel_context n cs.cs0_args;
+  cs0_concl_realargs = Array.map (liftn n (cs.cs0_nargs+1)) cs.cs0_concl_realargs
+}
+let lift_path_constructor n cs = {
+  cs1_cstr = cs.cs1_cstr;
+  cs1_params = List.map (lift n) cs.cs1_params;
+  cs1_nargs = cs.cs1_nargs;
+  cs1_args = lift_rel_context n cs.cs1_args;
+  cs1_inst = Array.map (liftn n (cs.cs1_nargs+1)) cs.cs1_inst;
+  cs1_lhs = liftn n (cs.cs1_nargs+1) cs.cs1_lhs;
+  cs1_rhs = liftn n (cs.cs1_nargs+1) cs.cs1_rhs
 }
 
-let lift_constructor n cs = {
-  cs_cstr = cs.cs_cstr;
-  cs_params = List.map (lift n) cs.cs_params;
-  cs_nargs = cs.cs_nargs;
-  cs_args = lift_rel_context n cs.cs_args;
-  cs_concl_realargs = Array.map (liftn n (cs.cs_nargs+1)) cs.cs_concl_realargs
-}
 (* Accept less parameters than in the signature *)
 
 let instantiate_params t args sign =
@@ -222,16 +262,59 @@ let get_constructor (ind,mib,mip,params) j =
   let (args,ccl) = decompose_prod_assum typi in
   let (_,allargs) = decompose_app ccl in
   let vargs = List.skipn (List.length params) allargs in
-  { cs_cstr = ith_constructor_of_inductive ind j;
-    cs_params = params;
-    cs_nargs = rel_context_length args;
-    cs_args = args;
-    cs_concl_realargs = Array.of_list vargs }
+  { cs0_cstr = ith_constructor_of_inductive ind j;
+    cs0_params = params;
+    cs0_nargs = rel_context_length args;
+    cs0_args = args;
+    cs0_concl_realargs = Array.of_list vargs }
+
+(* copied from inductive.ml. bad! *)
+let ind_subst mind mib =
+  let ntypes = mib.mind_ntypes in
+  let make_Ik k = mkInd (mind,ntypes-k-1) in
+  List.tabulate make_Ik ntypes
+let cstr_subst ind (mib,mip) params =
+  let ncstr0 = Array.length mip.mind_consnames in
+  let make_Ck k = mkApp(mkConstruct(ind,ncstr0-k),params) in
+  List.tabulate make_Ck ncstr0
+
+
+let get_path_constructor (ind,mib,mip,params) =
+  if Array.length mip.mind_pathcons = 0 then
+    fun _ -> assert false
+  else
+  let vp = Array.of_list params in
+  let ipc_subst =
+    cstr_subst ind (mib,mip) vp @
+      Sign.subst_of_rel_context_args mib.mind_params_ctxt vp @
+      ind_subst (fst ind) mib in
+  fun j ->
+    assert (j <= Array.length mip.mind_pathcons);
+    let j' = j+Array.length mip.mind_consnames in
+    let pc =  mip.mind_pathcons.(j-1) in
+    let pcbundle =
+      it_mkProd_or_LetIn (mkApp(mkProp,[|mkApp(mkProp,pc.c1_inst);pc.c1_lhs;pc.c1_rhs|])) pc.c1_args in
+    let rpcbundle =  substl ipc_subst pcbundle in
+    let (dargs, dcl) = decompose_prod_assum rpcbundle in
+    let (_,v) = destApp dcl in
+    let inst = if Array.length pc.c1_inst = 0 then [||] else snd (destApp v.(0)) in
+    let lhs = v.(1) in
+    let rhs = v.(2) in
+    { cs1_cstr = ith_constructor_of_inductive ind j';
+      cs1_params = params;
+      cs1_nargs = rel_context_length pc.c1_args;
+      cs1_args = dargs;
+      cs1_inst = inst;
+      cs1_lhs = lhs;
+      cs1_rhs = rhs }
 
 let get_constructors env (ind,params) =
   let (mib,mip) = Inductive.lookup_mind_specif env ind in
-  Array.init (Array.length mip.mind_consnames)
-    (fun j -> get_constructor (ind,mib,mip,params) (j+1))
+  let mk_path_cstr = get_path_constructor (ind,mib,mip,params) in
+  (Array.init (Array.length mip.mind_consnames)
+     (fun j -> get_constructor (ind,mib,mip,params) (j+1)),
+   Array.init (Array.length mip.mind_pathcons)
+     (fun i -> mk_path_cstr (i+1)))
 
 (* substitution in a signature *)
 
@@ -270,17 +353,15 @@ let get_arity env (ind,params) =
 
 (* Functions to build standard types related to inductive *)
 let build_dependent_constructor cs =
-  applist
-    (mkConstruct cs.cs_cstr,
-     (List.map (lift cs.cs_nargs) cs.cs_params)
-      @(extended_rel_list 0 cs.cs_args))
+  mkApp(applist(mkConstruct cs.cs0_cstr,
+		List.map (lift cs.cs0_nargs) cs.cs0_params),
+	Sign.args_of_rel_context 0 cs.cs0_args)
 
 let build_dependent_inductive env ((ind, params) as indf) =
   let arsign,_ = get_arity env indf in
   let nrealargs = List.length arsign in
-  applist
-    (mkInd ind,
-     (List.map (lift nrealargs) params)@(extended_rel_list 0 arsign))
+  mkApp(applist(mkInd ind,List.map (lift nrealargs) params),
+	Sign.args_of_rel_context 0 arsign)
 
 (* builds the arity of an elimination predicate in sort [s] *)
 
@@ -299,13 +380,21 @@ let make_arity env dep indf s = mkArity (make_arity_signature env dep indf, s)
 
 (* [p] is the predicate and [cs] a constructor summary *)
 let build_branch_type env dep p cs =
-  let base = appvect (lift cs.cs_nargs p, cs.cs_concl_realargs) in
+  let base = mkApp(lift cs.cs0_nargs p, cs.cs0_concl_realargs) in
   if dep then
     it_mkProd_or_LetIn_name env
-      (applist (base,[build_dependent_constructor cs]))
-      cs.cs_args
+      (mkApp(base,[|build_dependent_constructor cs|]))
+      cs.cs0_args
   else
-    it_mkProd_or_LetIn base cs.cs_args
+    it_mkProd_or_LetIn base cs.cs0_args
+
+
+let build_path_branch_type env dep pj cs br =
+  let ind = fst cs.cs1_cstr in
+  let (_,mip as specif) = Inductive.lookup_mind_specif env ind in
+  Inductive.build_path_branch_type ind specif (Array.of_list cs.cs1_params) pj dep br
+    (snd cs.cs1_cstr-Array.length mip.mind_consnames,
+     cs.cs1_args, cs.cs1_inst, cs.cs1_lhs, cs.cs1_rhs)
 
 (**************************************************)
 
