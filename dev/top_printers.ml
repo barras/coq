@@ -230,7 +230,7 @@ let print_pure_constr csr =
       print_string "::"; (term_display t); print_string ")"; close_box()
   | Prod (Name(id),t,c) ->
       open_hovbox 1;
-      print_string"("; print_string (string_of_id id);
+      print_string"forall("; print_string (string_of_id id);
       print_string ":"; box_display t;
       print_string ")"; print_cut();
       box_display c; close_box()
@@ -238,13 +238,13 @@ let print_pure_constr csr =
       print_string"("; box_display t; print_cut(); print_string "->";
       box_display c; print_string ")";
   | Lambda (na,t,c) ->
-      print_string "["; name_display na;
-      print_string ":"; box_display t; print_string "]";
+      print_string "fun("; name_display na;
+      print_string ":"; box_display t; print_string ")";
       print_cut(); box_display c;
   | LetIn (na,b,t,c) ->
-      print_string "["; name_display na; print_string "=";
+      print_string "[let "; name_display na; print_string "=";
       box_display b; print_cut();
-      print_string ":"; box_display t; print_string "]";
+      print_string ":"; box_display t; print_string " in ";
       print_cut(); box_display c;
   | App (c,l) ->
       print_string "(";
@@ -254,7 +254,7 @@ let print_pure_constr csr =
   | Evar (e,l) -> print_string "Evar#"; print_int e; print_string "{";
       Array.iter (fun x -> print_space (); box_display x) l;
       print_string"}"
-  | Const c -> print_string "Cons(";
+  | Const c -> print_string "Cst(";
       sp_con_display c;
       print_string ")"
   | Ind (sp,i) ->
@@ -270,8 +270,8 @@ let print_pure_constr csr =
   | Case (ci,p,c,bl) ->
       open_vbox 0;
       print_string "<"; box_display p; print_string ">";
-      print_cut(); print_string "Case";
-      print_space(); box_display c; print_space (); print_string "of";
+      print_cut(); print_string "match";
+      print_space(); box_display c; print_space (); print_string "with";
       open_vbox 0;
       Array.iter (fun x ->  print_cut();  box_display x) bl;
       close_box();
