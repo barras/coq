@@ -732,10 +732,11 @@ let rec pr_vernac = function
        str"Context" ++ spc () ++ pr_and_type_binders_arg l)
 
 
- | VernacDeclareInstances (glob, ids) ->
+ | VernacDeclareInstances (glob, ids, pri) ->
      hov 1 (pr_non_locality (not glob) ++
                str"Existing" ++ spc () ++ str(String.plural (List.length ids) "Instance") ++
-               spc () ++ prlist_with_sep spc pr_reference ids)
+               spc () ++ prlist_with_sep spc pr_reference ids ++
+	       pr_opt (fun i -> str" | " ++ int i) pri)
 
  | VernacDeclareClass id ->
      hov 1 (str"Existing" ++ spc () ++ str"Class" ++ spc () ++ pr_reference id)

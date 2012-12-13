@@ -777,8 +777,8 @@ let vernac_instance abst glob sup inst props pri =
 let vernac_context l =
   if not (Classes.context l) then raise UnsafeSuccess
 
-let vernac_declare_instances glob ids =
-  List.iter (fun (id) -> Classes.existing_instance glob id) ids
+let vernac_declare_instances glob ids pri =
+  List.iter (fun (id) -> Classes.existing_instance glob id pri) ids
 
 let vernac_declare_class id =
   Classes.declare_class id
@@ -1703,7 +1703,8 @@ let interp c = match c with
   | VernacInstance (abst, glob, sup, inst, props, pri) ->
       vernac_instance abst glob sup inst props pri
   | VernacContext sup -> vernac_context sup
-  | VernacDeclareInstances (glob, ids) -> vernac_declare_instances glob ids
+  | VernacDeclareInstances (glob, ids, pri) ->
+    vernac_declare_instances glob ids pri
   | VernacDeclareClass id -> vernac_declare_class id
 
   (* Solving *)
