@@ -85,6 +85,35 @@ let check_required_library d =
 
 (************************************************************************)
 
+(** Simple cache management. Assumes we can use generic equality on inputs.
+    cache function tells whether the request shall be cached, and upd indicates
+    whether the value for a given input has changed. Returns function f cached,
+    and a cache reinit function *)
+let create_cache ~cache ~upd f () =
+  let c = ref Gmap.empty in
+  let eval_and_cache x =
+    (* failures are not recorded *)
+    let v = f x in
+    c := Gmap.add x v !c;
+    v in
+  let cached_fun x =
+    if cache x then
+      if upd x then eval_and_cache x
+      else
+	(try Gmap.find x !c
+	 with Not_found -> eval_and_cache x)
+    else
+      f x in
+  cached_fun, (fun () -> c:=Gmap.empty)
+
+let has_changed check () =
+  let oldv = ref None in
+  fun x ->
+    match !oldv with
+	None -> oldv := Some (check x); true
+      | Some ov -> not (check x = ov)
+
+
 (** Signature of a logic. Needs to be completed! *)
 type coq_logic = {
   (** The False proposition *)
@@ -130,7 +159,7 @@ let full_logic_info = lazy
    let build_record args =
      match args with
 	 [|kind; _logic;
-	   tr; fa; tkind; iff; conj; disj; neg; i; ifflr; iffrl; conjI; _propositional;
+	   iff; conj; disj; neg; tr; fa; tkind; i; ifflr; iffrl; conjI; _propositional;
            ex; _fo_logic |] ->
 	   let tkind =
 	     if isSort tkind then destSort tkind else
@@ -142,6 +171,12 @@ let full_logic_info = lazy
        | _ -> anomaly "Coqlib.find_logic: typeclass coq_full_logic has wrong arity" in
    (cls,cl_ctxt,build_record,kind_pos))
 
+let instances_of gr _id =
+  Typeclasses.instances (Lazy.force gr)
+
+let logic_instances =
+  lazy(let (cls,_,_,_)=Lazy.force full_logic_info in cls)
+
 let find_all_logics () =
   (* Retrieve data about the 'full_logic' class *)
   let (cls,cl_ctxt,build_record,kind_pos) = Lazy.force full_logic_info in
@@ -149,8 +184,10 @@ let find_all_logics () =
   let env = Global.env() in
   let build i =
     let ty = Retyping.get_type_of env Evd.empty (constr_of_global (instance_impl i)) in
-    build_record (snd (destApp ty)) in
-  List.map build inst
+    if isApp ty then Some (build_record (snd (destApp ty)))
+    else None in
+  List.fold_right (fun log_ins ll -> match build log_ins with Some l -> l::ll | None -> ll) 
+    inst []
 
 let search_logic found =
   CList.map_filter
@@ -168,9 +205,12 @@ let find_logic env eid =
   (* If given, try to define the evar corresponding to the 'X' arg *)
   let evd =
     match eid with
+	(* Pb: the_conv_x not only solves the specified evar, but also
+	   the sort of the logic, which might not be the sort of the equality... *)
 	Some k ->
-	  (try Evarconv.the_conv_x env inst.(kind_pos) (mkSort k) evd
-	   with Reduction.NotConvertible -> raise Not_found)
+	  Evd.define (fst(destEvar inst.(kind_pos))) (mkSort k) evd
+(*	  (try Evarconv.the_conv_x env inst.(kind_pos) (mkSort k) evd
+	   with Reduction.NotConvertible -> raise Not_found)*)
       | None -> evd in
   (* Perform the proof search. We drop the solution (which contains no
      information anyway).
@@ -182,6 +222,24 @@ let find_logic env eid =
   (* Building the structure out of the raw array of arguments. *)
   build_record (Array.map (nf_evar evd) inst)
 
+(*
+let find_logic =
+  let c = ref Gmap.empty in
+  let eval_and_cache env lid =
+    (* failures are not recorded *)
+    let v = find_logic env lid in
+    c := Gmap.add lid v !c;
+    v in
+  let outdated =
+    has_changed(instances_of logic_instances)() in
+  let cached_fun env lid =
+    if outdated lid then
+      eval_and_cache env lid
+    else
+      (try Gmap.find lid !c
+       with Not_found -> eval_and_cache env lid) in
+  cached_fun
+*)
 
 (************************************************************************)
 
@@ -241,7 +299,7 @@ let full_eq_logic_info = lazy
    let build_record args =
      match args with
 	 [|kind; _logic;
-	   tr; fa; tkind; iff; conj; disj; neg; i; ifflr; iffrl; conjI; _propositional;
+	   iff; conj; disj; neg; tr; fa; tkind; i; ifflr; iffrl; conjI; _propositional;
            ex; _fo_logic;
 	   eq; ind; refl; sym; trans; congr; _eq_logic|] ->
 	   let tkind =
@@ -255,7 +313,13 @@ let full_eq_logic_info = lazy
 	    eq_inv=(fun()->failwith"find_equality: not implemented")}
        | _ -> anomaly "Coqlib.find_equality: typeclass coq_full_logic has wrong arity" in
    (cls,cl_ctxt,build_record,eqpos))
-
+(*
+let (lookup_equality, clear_equality_cache) =
+  create_cache
+    ~cache:(fun _ -> true)
+    ~upd:(instances_changed lazy(let (cls,_,_,_)=Lazy.force full_logic_info in cls))
+    ()
+*)
 let find_all_equalities () =
   (* Retrieve data about the 'full_eq_logic' class *)
   let (cls,cl_ctxt,build_record,eqpos) = Lazy.force full_eq_logic_info in
@@ -263,8 +327,10 @@ let find_all_equalities () =
   let env = Global.env() in
   let build i =
     let ty = Retyping.get_type_of env Evd.empty (constr_of_global (instance_impl i)) in
-    build_record (snd(destApp ty)) in
-  List.map build inst
+    if isApp ty then Some (build_record (snd (destApp ty)))
+    else None in
+  List.fold_right (fun eq_ins ll -> match build eq_ins with Some l -> l::ll | None -> ll) 
+    inst []
 
 let find_equality env eid =
   (* Retrieve data about the 'full_eq_logic' class *)
@@ -278,9 +344,12 @@ let find_equality env eid =
      (position 16) *)
   let evd =
     match eid with
+	(* Pb: the_conv_x not only solves the specified evar, but also
+	   the sort of the logic, which might not be the sort of the equality... *)
 	Some eq ->
-	  (try Evarconv.the_conv_x env inst.(eqpos) eq evd
-	   with Reduction.NotConvertible -> raise Not_found)
+	  Evd.define (fst(destEvar inst.(eqpos))) eq evd
+(*	  (try Evarconv.the_conv_x env inst.(eqpos) eq evd
+	   with Reduction.NotConvertible -> raise Not_found)*)
       | None -> evd in
   (* Perform the proof search. We drop the solution (which contains no information).
      We are only interested in solving the evars argument of full_eq_logic. *)
@@ -315,6 +384,7 @@ let search_equality found =
   CList.map_filter
     (fun e -> if found e then Some e else None)
     (find_all_equalities())
+
 
 (************************************************************************)
 (* Specific Coq objects *)
@@ -553,6 +623,10 @@ let build_coq_inversion_eq_data () =
   inv_ind = Lazy.force coq_eq_ind;
   inv_congr = Lazy.force coq_eq_congr_canonical }
 
+let build_coq_eq_full () =
+  { eq_logic = prop_logic();
+    eq_data = build_coq_eq_data();
+    eq_inv = build_coq_inversion_eq_data }
 
 (* Equality on Type as a Type *)
 let coq_identity_eq = lazy_init_constant ["Datatypes"] "identity"
@@ -579,6 +653,10 @@ let build_coq_inversion_identity_data () =
   inv_ind = Lazy.force coq_identity_ind;
   inv_congr = Lazy.force coq_identity_congr_canonical }
 
+let build_coq_identity_full () =
+  { eq_logic = prop_logic();
+    eq_data = build_coq_identity_data();
+    eq_inv = build_coq_inversion_identity_data }
 
 (* Heterogenous equality on Type *)
 
@@ -632,3 +710,27 @@ let build_coq_inversion_eq_true_data () =
 
 
 end
+
+(***********************************)
+(* Disable lookup *)
+(*
+let logics () = [Std.prop_logic()]
+
+let find_logic env lid = List.hd(logics())
+let search_logic found =
+  CList.map_filter
+    (fun l -> if found l then Some l else None)
+    (logics())
+
+let equalities () = [Std.build_coq_eq_full()(*;Std.build_coq_identity_full()*)]
+let find_equality env eid =
+  match eid with
+      None -> List.hd(equalities())
+    | Some c when eq_constr c (Std.build_coq_eq()) ->  List.hd(equalities())
+    | _ -> raise Not_found
+
+let search_equality found =
+  CList.map_filter
+    (fun l -> if found l then Some l else None)
+    (equalities())
+*)

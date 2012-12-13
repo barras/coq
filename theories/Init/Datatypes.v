@@ -330,9 +330,12 @@ Inductive identity (A:Type) (a:A) : A -> Type :=
   identity_refl : identity a a.
 Hint Resolve identity_refl: core.
 
+Scheme identity_rect_nodep := Minimality for identity Sort Type.
+
 Arguments identity_ind [A] a P f y i.
 Arguments identity_rec [A] a P f y i.
 Arguments identity_rect [A] a P f y i.
+Arguments identity_rect_nodep [A] a P f y i.
 
 (** Identity type *)
 

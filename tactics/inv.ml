@@ -136,7 +136,7 @@ let make_inv_predicate env sigma indf realargs id status concl =
   let predicate = it_mkLambda_or_LetIn_name env newconcl hyps in
   (* OK - this predicate should now be usable by res_elimination_then to
      do elimination on the conclusion. *)
-  (predicate,neqns)
+  (eqd,predicate,neqns)
 
 (* The result of the elimination is a bunch of goals like:
 
@@ -295,13 +295,16 @@ let remember_first_eq id x = if !x == MoveLast then x := MoveAfter id
    If it can discriminate then the goal is proved, if not tries to use it as
    a rewrite rule. It erases the clause which is given as input *)
 
-let projectAndApply thin id eqname names depids gls =
+let projectAndApply eqd thin id eqname names depids gls =
   let subst_hyp l2r id =
     tclTHEN (tclTRY(rewriteInConcl l2r (mkVar id)))
       (if thin then clear [id] else (remember_first_eq id eqname; tclIDTAC))
   in
   let substHypIfVariable tac id gls =
-    let (eq,t,t1,t2) = Hipattern.dest_eq (pf_get_hyp_typ gls id) in
+    let (t,t1,t2) =
+      match destApp (pf_get_hyp_typ gls id) with
+	| (_,[|t;t1;t2|]) -> (t,t1,t2)
+	| _ -> anomaly "projectAndApply: not an well-formed equation" in
     let t1 = pf_whd_betadeltaiota gls t1 in
     let t2 = pf_whd_betadeltaiota gls t2 in
     match (kind_of_term t1, kind_of_term t2) with
@@ -332,7 +335,7 @@ let projectAndApply thin id eqname names depids gls =
 
 (* Inversion qui n'introduit pas les hypotheses, afin de pouvoir les nommer
    soi-meme (proposition de Valerie). *)
-let rewrite_equations_gene othin neqns ba gl =
+let rewrite_equations_gene eqd othin neqns ba gl =
   let (depids,nodepids) = split_dep_and_nodep ba.assums gl in
   let rewrite_eqns =
     match othin with
@@ -345,7 +348,7 @@ let rewrite_equations_gene othin neqns ba gl =
                         (onLastHypId
                            (fun id ->
                               tclTRY
-			        (projectAndApply thin id (ref MoveLast)
+			        (projectAndApply eqd thin id (ref MoveLast)
 				  [] depids))));
                  onHyps (compose List.rev (afterHyp last)) bring_hyps;
                  onHyps (afterHyp last)
@@ -397,7 +400,7 @@ let extract_eqn_names = function
   | None -> None,[]
   | Some x -> x
 
-let rewrite_equations othin neqns names ba gl =
+let rewrite_equations eqd othin neqns names ba gl =
   let names = List.map (get_names true) names in
   let (depids,nodepids) = split_dep_and_nodep ba.assums gl in
   let rewrite_eqns =
@@ -412,7 +415,7 @@ let rewrite_equations othin neqns names ba gl =
                (tclTHEN
 		 (intro_move idopt MoveLast)
 		 (onLastHypId (fun id ->
-		   tclTRY (projectAndApply thin id first_eq names depids)))))
+		   tclTRY (projectAndApply eqd thin id first_eq names depids)))))
 	       names;
 	     tclMAP (fun (id,_,_) gl ->
 	       intro_move None (if thin then MoveLast else !first_eq) gl)
@@ -432,11 +435,11 @@ let interp_inversion_kind = function
   | FullInversion -> Some false
   | FullInversionClear -> Some true
 
-let rewrite_equations_tac (gene, othin) id neqns names ba =
+let rewrite_equations_tac eqd (gene, othin) id neqns names ba =
   let othin = interp_inversion_kind othin in
   let tac =
-    if gene then rewrite_equations_gene othin neqns ba
-    else rewrite_equations othin neqns names ba in
+    if gene then rewrite_equations_gene eqd othin neqns ba
+    else rewrite_equations eqd othin neqns names ba in
   match othin with
   | Some true (* if Inversion_clear, clear the hypothesis *) ->
     tclTHEN tac (tclTRY (clear [id]))
@@ -456,7 +459,7 @@ let raw_inversion inv_kind id status names gl =
   let ccl = clenv_type indclause in
   check_no_metas indclause ccl;
   let IndType (indf,realargs) = find_rectype env sigma ccl in
-  let (elim_predicate,neqns) =
+  let (eqd,elim_predicate,neqns) =
     make_inv_predicate env sigma indf realargs id status (pf_concl gl) in
   let (cut_concl,case_tac) =
     if status != NoDep && (dependent c (pf_concl gl)) then
@@ -469,7 +472,7 @@ let raw_inversion inv_kind id status names gl =
   (tclTHENS
      (assert_tac Anonymous cut_concl)
      [case_tac names
-       (introCaseAssumsThen (rewrite_equations_tac inv_kind id neqns))
+       (introCaseAssumsThen (rewrite_equations_tac eqd inv_kind id neqns))
        (Some elim_predicate) ([],[]) ind indclause;
       onLastHypId
         (fun id ->

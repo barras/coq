@@ -751,8 +751,10 @@ let discrimination_pf e (t,t1,t2) discriminator lbeq =
   let logic = lbeq.eq_logic in
   let i           = logic.log_I in
   let absurd_term = logic.log_False in
-  let eq_elim     = ind_scheme_of_eq lbeq.eq_data in
-  (applist (eq_elim, [t;t1;mkNamedLambda e t discriminator;i;t2]), absurd_term)
+(*  let eq_elim     = ind_scheme_of_eq lbeq.eq_data in*)
+  (mkApp(lbeq.eq_data.ind,
+	 [|t;t1;mkNamedLambda e t discriminator;i;t2|]),
+   absurd_term)
 
 let eq_baseid = id_of_string "e"
 
@@ -930,7 +932,6 @@ let minimal_free_rels_rec env sigma =
  *)
 
 let sig_clausal_form env sigma sort_of_ty siglen ty dflt =
-  let { intro = exist_term } = find_sigma_data sort_of_ty in
   let evdref = ref (Evd.create_goal_evar_defs sigma) in
   let rec sigrec_clausal_form siglen p_i =
     if Int.equal siglen 0 then
@@ -955,6 +956,7 @@ let sig_clausal_form env sigma sort_of_ty siglen ty dflt =
 	| Some w ->
             let w_type = type_of env sigma w in
             if Evarconv.e_cumul env evdref w_type a then
+	      let { intro = exist_term } = find_sigma_data sort_of_ty in
               applist(exist_term,[w_type;p_i_minus_1;w;tuple_tail])
             else
               error "Cannot solve a unification problem."

@@ -278,7 +278,10 @@ let project_hint pri l2r r =
   let env = Global.env() in
   let c = Globnames.constr_of_global gr in
   let t = Retyping.get_type_of env Evd.empty c in
-  let is_iff iff = List.hd (Coqlib.search_logic (fun l -> eq_constr l.log_iff iff)) in
+  let is_iff iff =
+    match Coqlib.search_logic (fun l -> eq_constr l.log_iff iff) with
+	l::_ -> l
+      | [] -> error "Hint Resolve: could not find a declared logic using iff." in
   let (logic,t) = Tacred.reduce_to_quantified_symbol env Evd.empty is_iff t in
   let sign,ccl = decompose_prod_assum t in
   let (a,b) = match snd (decompose_app ccl) with
@@ -287,8 +290,7 @@ let project_hint pri l2r r =
   let p =
     if l2r then logic.log_iff_left else logic.log_iff_right in
   let c = Reductionops.whd_beta Evd.empty (mkApp (c,Termops.extended_rel_vect 0 sign)) in
-  let c = it_mkLambda_or_LetIn
-    (mkApp (p,[|mkArrow a (lift 1 b);mkArrow b (lift 1 a);c|])) sign in
+  let c = it_mkLambda_or_LetIn (mkApp (p,[|a; b;c|])) sign in
   let id =
     Nameops.add_suffix (Nametab.basename_of_global gr) ("_proj_" ^ (if l2r then "l2r" else "r2l"))
   in

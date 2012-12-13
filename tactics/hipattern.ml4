@@ -389,7 +389,8 @@ let find_this_eq_data_decompose gl eqn =
   let (lbeq,eq_args) =
     try find_eq_data eqn
     with PatternMatchingFailure ->
-      errorlabstrm "" (str "No primitive equality found.") in
+      errorlabstrm ""
+	(str "No declared equality matches the problem.") in
   let eq_args =
     try extract_eq_args gl eq_args
     with PatternMatchingFailure ->
@@ -402,12 +403,16 @@ let dest_eq eqn =
 	(eq,PolymorphicLeibnizEq(t,e1,e2)) -> (eq,t,e1,e2)
       | _ -> raise PatternMatchingFailure
   with PatternMatchingFailure ->
-    error "Cannot find a declared equality for this equation."
+    error "No declared equality matches the problem."
 
 (*** Sigma-types *)
 
 (* Patterns "(existS ?1 ?2 ?3 ?4)" and "(existT ?1 ?2 ?3 ?4)" *)
-let coq_ex_pattern_gen ex = lazy PATTERN [ %ex ?X1 ?X2 ?X3 ?X4 ]
+let coq_ex_pattern_gen ex =
+  lazy
+    try PATTERN [ %ex ?X1 ?X2 ?X3 ?X4 ]
+    (* may happen if some library is not there... *)
+    with Anomaly _ -> raise PatternMatchingFailure
 let coq_existT_pattern = coq_ex_pattern_gen coq_existT_ref
 let coq_exist_pattern = coq_ex_pattern_gen Std.coq_exist_ref
 
