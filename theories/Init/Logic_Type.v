@@ -54,7 +54,6 @@ Global Instance prop_identity_logic :
   equational_logic (@identity) (@identity_rect_nodep)
     (@identity_refl) (@identity_sym) (@identity_trans) (@identity_congr).
 
-(** Open this module to use identity rather than eq *)
 Global Instance prop_full_identity_logic :
   full_eq_logic prop_propositional prop_fo_logic prop_identity_logic | 3.
 

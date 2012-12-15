@@ -232,6 +232,7 @@ type equation_kind =
   | MonomorphicLeibnizEq of constr * constr
   | PolymorphicLeibnizEq of constr * constr * constr
   | HeterogenousEq of constr * constr * constr * constr
+  | OtherInductiveEquality
 
 exception NoEquationFound
 
@@ -242,8 +243,7 @@ let coq_refl_jm_pattern       = PATTERN [ forall A:_, forall x:A, _ A x A x ]
 open Globnames
 
 let match_with_equation t =
-  if not (isApp t) then raise NoEquationFound;
-  let (hdapp,args) = destApp t in
+  let (hdapp,args) = if isApp t then destApp t else (t,[||]) in
   try
     if Array.length args <> 3 then raise Not_found;
     (Some (Coqlib.find_equality (Global.env()) (Some hdapp)), hdapp,
@@ -266,6 +266,8 @@ let match_with_equation t =
 	      None, hdapp, PolymorphicLeibnizEq(args.(0),args.(1),args.(2))
 	    else if is_matching coq_refl_jm_pattern constr_types.(0) then
 	      None, hdapp, HeterogenousEq(args.(0),args.(1),args.(2),args.(3))
+	    else if Int.equal (constructor_nrealargs (Global.env()) (ind,1)) 0 then
+	      None, hdapp, OtherInductiveEquality
 	    else raise NoEquationFound
             else raise NoEquationFound
       | _ -> raise NoEquationFound)
@@ -380,6 +382,8 @@ let extract_eq_args gl = function
   | HeterogenousEq (t1,e1,t2,e2) ->
       if Tacmach.pf_conv_x gl t1 t2 then (t1,e1,e2)
       else raise PatternMatchingFailure
+  | OtherInductiveEquality ->
+    raise PatternMatchingFailure (* what could we do ? *)
 
 let find_eq_data_decompose gl eqn =
   let (lbeq,eq_args) = find_eq_data eqn in

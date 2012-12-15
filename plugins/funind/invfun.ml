@@ -19,6 +19,7 @@ open Indfun_common
 open Tacmach
 open Hiddentac
 open Misctypes
+open Coqlib
 
 (* Some pretty printing function for debugging purpose *)
 
@@ -134,8 +135,9 @@ let generate_type g_to_f f graph i =
     the hypothesis [res = fv] can then be computed
     We will need to lift it by one in order to use it as a conclusion
     i*)
+  let eqd = Coqlib.find_equality (Global.env()) None in
   let res_eq_f_of_args =
-    mkApp(Coqlib.Std.build_coq_eq (),[|lift 2 res_type;mkRel 1;mkRel 2|])
+    mkApp(eqd.eq_data.eq,[|lift 2 res_type;mkRel 1;mkRel 2|])
   in
   (*i
     The hypothesis [graph\ x_1\ldots x_n\ res] can then be computed
@@ -263,8 +265,8 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	branches
     in
     (* before building the full intro pattern for the principle *)
-    let eq_ind = Coqlib.Std.build_coq_eq () in
-    let eq_construct = mkConstruct((destInd eq_ind),1) in
+    let eq_ind = Coqlib.find_equality (Global.env()) None in
+    let eq_construct = mkConstruct((destInd eq_ind.eq_data.eq),1) in
     (* The next to referencies will be used to find out which constructor to apply in each branch *)
     let ind_number = ref 0
     and min_constr_number = ref 0 in
@@ -342,7 +344,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 			     match kind_of_term t'',kind_of_term t''' with
 			       | App(eq,args), App(graph',_)
 				   when
-				     (eq_constr eq eq_ind) &&
+				     (eq_constr eq eq_ind.eq_data.eq) &&
 				       Array.exists  (eq_constr graph') graphs_constr ->
 				   (args.(2)::(mkApp(mkVar hid,[|args.(2);(mkApp(eq_construct,[|args.(0);args.(2)|]))|]))
 				    ::acc)
@@ -727,12 +729,12 @@ let  rec intros_with_rewrite g =
   observe_tac "intros_with_rewrite" intros_with_rewrite_aux g
 and intros_with_rewrite_aux : tactic =
   fun g ->
-    let eq_ind = Coqlib.Std.build_coq_eq () in
+    let eq_ind = Coqlib.find_equality (pf_env g) None in
     match kind_of_term (pf_concl g) with
 	  | Prod(_,t,t') ->
 	      begin
 		match kind_of_term t with
-		  | App(eq,args) when (eq_constr eq eq_ind)  ->
+		  | App(eq,args) when (eq_constr eq eq_ind.eq_data.eq)  ->
  		      if Reductionops.is_conv (pf_env g) (project g) args.(1) args.(2)
 		      then
 			let id = pf_get_new_id (id_of_string "y") g  in
@@ -778,7 +780,7 @@ and intros_with_rewrite_aux : tactic =
 			    intros_with_rewrite
 			  ] g
 			end
-		  | Ind _ when eq_constr t (Coqlib.Std.build_coq_False ()) ->
+		  | Ind _ when eq_constr t eq_ind.eq_logic.log_False ->
 		      Tauto.tauto g
 		  | Case(_,_,v,_) ->
 		      tclTHENSEQ[
@@ -826,7 +828,7 @@ let rec reflexivity_with_destruct_cases g =
 	| _ -> reflexivity
     with _ -> reflexivity
   in
-  let eq_ind =     Coqlib.Std.build_coq_eq () in
+  let eq_ind = find_equality (pf_env g) None in
   let discr_inject =
     Tacticals.onAllHypsAndConcl (
        fun sc g ->
@@ -834,7 +836,7 @@ let rec reflexivity_with_destruct_cases g =
 	     None -> tclIDTAC g
 	   | Some id ->
 	       match kind_of_term  (pf_type_of g (mkVar id)) with
-		 | App(eq,[|_;t1;t2|]) when eq_constr eq eq_ind ->
+		 | App(eq,[|_;t1;t2|]) when eq_constr eq eq_ind.eq_data.eq ->
 		     if Equality.discriminable (pf_env g) (project g) t1 t2
 		     then Equality.discrHyp id g
 		     else if Equality.injectable (pf_env g) (project g) t1 t2
@@ -1189,8 +1191,9 @@ let functional_inversion kn hid fconst f_correct : tactic =
   fun g ->
     let old_ids = List.fold_right Idset.add  (pf_ids_of_hyps g) Idset.empty in
     let type_of_h = pf_type_of g (mkVar hid) in
+    let eqd = find_equality (pf_env g) None in
     match kind_of_term type_of_h with
-      | App(eq,args) when eq_constr eq (Coqlib.Std.build_coq_eq ())  ->
+      | App(eq,args) when eq_constr eq eqd.eq_data.eq ->
 	  let pre_tac,f_args,res =
 	    match kind_of_term args.(1),kind_of_term args.(2) with
 	      | App(f,f_args),_ when eq_constr f fconst ->
@@ -1232,6 +1235,7 @@ let invfun qhyp f  =
 
 
 let invfun qhyp f g =
+  let eqd = find_equality (pf_env g) None in
   match f with
     | Some f -> invfun qhyp f g
     | None ->
@@ -1239,7 +1243,7 @@ let invfun qhyp f g =
 	  (fun hid g ->
 	     let hyp_typ = pf_type_of g (mkVar hid)  in
 	     match kind_of_term hyp_typ with
-	       | App(eq,args) when eq_constr eq (Coqlib.Std.build_coq_eq ()) ->
+	       | App(eq,args) when eq_constr eq eqd.eq_data.eq ->
 		   begin
 		     let f1,_ = decompose_app args.(1) in
 		     try

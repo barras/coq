@@ -1176,7 +1176,7 @@ let get_current_subgoals_types () =
 let build_and_l l =
   let logic = Coqlib.find_logic (Global.env()) None in
   let and_constr =  logic.log_and in
-  let conj_constr = logic.log_conj in
+  let conj_constr = logic.log_andI in
   let mk_and p1 p2 =
     Term.mkApp(and_constr,[|p1;p2|]) in
   let rec is_well_founded t = 

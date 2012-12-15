@@ -112,6 +112,7 @@ $(foreach S,$(VSUBSYSTEMS),$(eval $(call mkstamp,$(S))))
 #######################################################################
 
 summary_dir = echo $(1); find $(2) -name '*.log' -print0 | xargs -0 -n 1 tail -n1 | sort -g
+parse_opts = `sed -n -e "s/.*(\*[ \t]*Coq[ \t]\+options[ \t]*:\(.*\)\*).*/\1/p" "$(1)"`
 
 .PHONY: summary summary.log
 
@@ -157,7 +158,7 @@ $(addsuffix .log,$(wildcard bugs/opened/shouldnotsucceed/*.v)): %.v.log: %.v
 	@echo "TEST      $<"
 	$(HIDE){ \
 	  $(call test_intro,$<); \
-	  $(command) "$<" 2>&1; R=$$?; times; \
+	  $(command) "$<" $(call parse_opts,"$<") 2>&1; R=$$?; times; \
 	  if [ $$R = 0 ]; then \
 	    echo $(log_success); \
 	    echo "    $<...still active"; \
@@ -172,7 +173,7 @@ $(addsuffix .log,$(wildcard bugs/opened/shouldnotfail/*.v)): %.v.log: %.v
 	@echo "TEST      $<"
 	$(HIDE){ \
 	  echo $(call log_intro,$<); \
-	  $(command) "$<" 2>&1; R=$$?; times; \
+	  $(command) "$<" $(call parse_opts,"$<") 2>&1; R=$$?; times; \
 	  if [ $$R != 0 ]; then \
 	    echo $(log_success); \
 	    echo "    $<...still active"; \
@@ -187,7 +188,7 @@ $(addsuffix .log,$(wildcard bugs/closed/shouldsucceed/*.v)): %.v.log: %.v
 	@echo "TEST      $<"
 	$(HIDE){ \
 	  echo $(call log_intro,$<); \
-	  $(command) "$<" 2>&1; R=$$?; times; \
+	  $(command) "$<" $(call parse_opts,"$<") 2>&1; R=$$?; times; \
 	  if [ $$R = 0 ]; then \
 	    echo $(log_success); \
 	    echo "    $<...Ok"; \
@@ -202,7 +203,7 @@ $(addsuffix .log,$(wildcard bugs/closed/shouldfail/*.v)): %.v.log: %.v
 	@echo "TEST      $<"
 	$(HIDE){ \
 	  echo $(call log_intro,$<); \
-	  $(command) "$<" 2>&1; R=$$?; times; \
+	  $(command) "$<" $(call parse_opts,"$<") 2>&1; R=$$?; times; \
 	  if [ $$R != 0 ]; then \
 	    echo $(log_success); \
 	    echo "    $<...Ok"; \
@@ -220,7 +221,7 @@ $(addsuffix .log,$(wildcard prerequisite/*.v)): %.v.log: %.v
 	@echo "TEST      $<"
 	$(HIDE){ \
 	  echo $(call log_intro,$<); \
-	  $(coqc) "$*" 2>&1; R=$$?; times; \
+	  $(coqc) "$*" $(call parse_opts,"$<") 2>&1; R=$$?; times; \
 	  if [ $$R != 0 ]; then \
 	    echo $(log_failure); \
 	    echo "    $<...could not be prepared" ; \
@@ -231,11 +232,11 @@ $(addsuffix .log,$(wildcard prerequisite/*.v)): %.v.log: %.v
 	} > "$@"
 
 $(addsuffix .log,$(wildcard success/*.v micromega/*.v modules/*.v)): %.v.log: %.v
-	@echo "TEST      $<"
+	@echo "TEST      $<" $(call parse_opts,$<)
 	$(HIDE){ \
 	  opts="$(if $(findstring modules/,$<),-I modules -impredicative-set)"; \
 	  echo $(call log_intro,$<); \
-	  $(command) "$<" $$opts 2>&1; R=$$?; times; \
+	  $(command) "$<" $(call parse_opts,"$<") $$opts 2>&1; R=$$?; times; \
 	  if [ $$R = 0 ]; then \
 	    echo $(log_success); \
 	    echo "    $<...Ok"; \
@@ -249,7 +250,7 @@ $(addsuffix .log,$(wildcard failure/*.v)): %.v.log: %.v
 	@echo "TEST      $<"
 	$(HIDE){ \
 	  echo $(call log_intro,$<); \
-	  $(command) "$<" 2>&1; R=$$?; times; \
+	  $(command) "$<" $(call parse_opts,"$<") 2>&1; R=$$?; times; \
 	  if [ $$R != 0 ]; then \
 	    echo $(log_success); \
 	    echo "    $<...Ok"; \
@@ -264,7 +265,7 @@ $(addsuffix .log,$(wildcard output/*.v)): %.v.log: %.v
 	$(HIDE){ \
 	  echo $(call log_intro,$<); \
 	  tmpoutput=`mktemp /tmp/coqcheck.XXXXXX`; \
-	  $(command) "$<" 2>&1 \
+	  $(command) "$<" $(call parse_opts,"$<") 2>&1 \
 	    | grep -v "Welcome to Coq" \
 	    | grep -v "\[Loading ML file" \
 	    | grep -v "Skipping rcfile loading" \
@@ -284,7 +285,7 @@ $(addsuffix .log,$(wildcard interactive/*.v)): %.v.log: %.v
 	@echo "TEST      $<"
 	$(HIDE){ \
 	  echo $(call log_intro,$<); \
-	  $(coqtop) < "$<" 2>&1; R=$$?; times; \
+	  $(coqtop) $(call parse_opts,"$<") < "$<" 2>&1; R=$$?; times; \
 	  if [ $$R = 0 ]; then \
 	    echo $(log_success); \
 	    echo "    $<...Ok"; \
@@ -333,7 +334,7 @@ $(addsuffix .log,$(wildcard ideal-features/*.v)): %.v.log: %.v
 	@echo "TEST      $<"
 	$(HIDE){ \
 	  echo $(call log_intro,$<); \
-	  $(command) "$<" 2>&1; R=$$?; times; \
+	  $(command) "$<" $(call parse_opts,"$<") 2>&1; R=$$?; times; \
 	  if [ $$R != 0 ]; then \
 	      echo $(log_success); \
 	      echo "    $<...still wished"; \

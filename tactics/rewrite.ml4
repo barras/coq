@@ -34,6 +34,7 @@ open Misctypes
 open Locus
 open Locusops
 open Decl_kinds
+open Coqlib
 
 (** Typeclass-based generalized rewriting. *)
 
@@ -546,15 +547,15 @@ type rewrite_result = rewrite_result_info option
 type strategy = Environ.env -> identifier list -> constr -> types ->
   constr option -> evars -> rewrite_result option
 
-let get_rew_rel r = match r.rew_prf with
+let get_rew_rel eqd r = match r.rew_prf with
   | RewPrf (rel, prf) -> rel
-  | RewCast c -> mkApp (Coqlib.Std.build_coq_eq (), [| r.rew_car; r.rew_from; r.rew_to |])
+  | RewCast c -> mkApp (eqd.eq_data.eq, [| r.rew_car; r.rew_from; r.rew_to |])
 
-let get_rew_prf r = match r.rew_prf with
+let get_rew_prf eqd r = match r.rew_prf with
   | RewPrf (rel, prf) -> rel, prf 
   | RewCast c ->
-    let rel = mkApp (Coqlib.Std.build_coq_eq (), [| r.rew_car |]) in
-      rel, mkCast (mkApp (Coqlib.Std.build_coq_eq_refl (), [| r.rew_car; r.rew_from |]),
+    let rel = mkApp (eqd.eq_data.eq, [| r.rew_car |]) in
+      rel, mkCast (mkApp (eqd.eq_data.refl, [| r.rew_car; r.rew_from |]),
 		   c, mkApp (rel, [| r.rew_from; r.rew_to |]))
 
 let resolve_subrelation env avoid car rel prf rel' res =
@@ -594,6 +595,7 @@ let resolve_morphism env avoid oldt m ?(fnewt=fun x -> x) args args' cstr evars 
     let evars, morph = new_cstr_evar evars env' app in
       evars, morph, morph, sigargs, appm, morphobjs, morphobjs'
   in
+  let eqd = find_equality (Global.env()) None in
   let projargs, subst, evars, respars, typeargs =
     Array.fold_left2
       (fun (acc, subst, evars, sigargs, typeargs') x y ->
@@ -607,7 +609,7 @@ let resolve_morphism env avoid oldt m ?(fnewt=fun x -> x) args args' cstr evars 
 		  let evars, proof = proper_proof env evars carrier relation x in
 		    [ proof ; x ; x ] @ acc, subst, evars, sigargs, x :: typeargs'
 	      | Some r ->
-		  [ snd (get_rew_prf r); r.rew_to; x ] @ acc, subst, evars, sigargs, r.rew_to :: typeargs')
+		  [ snd (get_rew_prf eqd r); r.rew_to; x ] @ acc, subst, evars, sigargs, r.rew_to :: typeargs')
 	  | None ->
 	      if not (Option.is_empty y) then error "Cannot rewrite the argument of a dependent function";
 	      x :: acc, x :: subst, evars, sigargs, x :: typeargs')
@@ -726,11 +728,12 @@ let unfold_match env sigma sk app =
 
 let is_rew_cast = function RewCast _ -> true | _ -> false
 
-let coerce env avoid cstr res = 
-  let rel, prf = get_rew_prf res in
+let coerce env eqd avoid cstr res = 
+  let rel, prf = get_rew_prf eqd res in
     apply_constraint env avoid res.rew_car rel prf cstr res
 
 let subterm all flags (s : strategy) : strategy =
+  let eqd = find_equality (Global.env()) None in
   let rec aux env avoid t ty cstr evars =
     let cstr' = Option.map (fun c -> (ty, Some c)) cstr in
       match kind_of_term t with
@@ -871,7 +874,7 @@ let subterm all flags (s : strategy) : strategy =
 	    match c' with
 	    | Some (Some r) ->
 		let res = make_leibniz_proof (mkCase (ci, lift 1 p, mkRel 1, Array.map (lift 1) brs)) ty r in
-		  Some (Some (coerce env avoid cstr res))
+		  Some (Some (coerce env eqd avoid cstr res))
 	    | x ->
 	      if Array.for_all (Int.equal 0) ci.ci_cstr_ndecls then
 		let cstr = Some (mkApp (Lazy.force coq_eq, [| ty |])) in
@@ -901,7 +904,7 @@ let subterm all flags (s : strategy) : strategy =
 	  in 
 	    (match res with
 	     | Some (Some r) ->  
-	       let rel, prf = get_rew_prf r in
+	       let rel, prf = get_rew_prf eqd r in
 		 Some (Some (apply_constraint env avoid r.rew_car rel prf cstr r))
 	     | x -> x)
       | _ -> None

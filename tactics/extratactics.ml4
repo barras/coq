@@ -288,7 +288,7 @@ let project_hint pri l2r r =
     | [a;b] -> (a,b)
     | _ -> assert false in
   let p =
-    if l2r then logic.log_iff_left else logic.log_iff_right in
+    if l2r then logic.log_iffE1 else logic.log_iffE2 in
   let c = Reductionops.whd_beta Evd.empty (mkApp (c,Termops.extended_rel_vect 0 sign)) in
   let c = it_mkLambda_or_LetIn (mkApp (p,[|a; b;c|])) sign in
   let id =

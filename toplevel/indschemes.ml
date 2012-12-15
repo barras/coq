@@ -413,7 +413,7 @@ let build_combined_scheme env schemes =
   (* Number of clauses, including the predicates quantification *)
   let prods = nb_prod t - (nargs + 1) in
   let logic = Coqlib.find_logic env None in
-  let coqand = logic.log_and and coqconj = logic.log_conj in
+  let coqand = logic.log_and and coqconj = logic.log_andI in
   let relargs = rel_vect 0 prods in
   let concls = List.rev_map
     (fun (cst, t) ->

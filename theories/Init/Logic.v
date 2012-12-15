@@ -13,14 +13,21 @@ Require Import LogicClasses.
 
 Notation "A -> B" := (forall (_ : A), B) : type_scope.
 
+(** We are going to declare logical connectives for the sort Prop *)
+Global Instance prop_logic : logic_kind Prop := fun x => x.
+
 (** * Propositional connectives *)
 
 (** [True] is the always true proposition *)
 Inductive True : Prop :=
   I : True.
 
+Global Instance prop_True : trivial_prop True I.
+
 (** [False] is the always false proposition *)
 Inductive False : Prop :=.
+
+Global Instance prop_False : absurd_prop False False_ind.
 
 (** [not A], written [~A], is the negation of [A] *)
 Definition not (A:Prop) := A -> False.
@@ -29,12 +36,12 @@ Notation "~ x" := (not x) : type_scope.
 
 Hint Unfold not: core.
 
-  (** [and A B], written [A /\ B], is the conjunction of [A] and [B]
+(** [and A B], written [A /\ B], is the conjunction of [A] and [B]
 
-      [conj p q] is a proof of [A /\ B] as soon as
-      [p] is a proof of [A] and [q] a proof of [B]
+    [conj p q] is a proof of [A /\ B] as soon as
+    [p] is a proof of [A] and [q] a proof of [B]
 
-      [proj1] and [proj2] are first and second projections of a conjunction *)
+    [proj1] and [proj2] are first and second projections of a conjunction *)
 
 Inductive and (A B:Prop) : Prop :=
   conj : A -> B -> A /\ B
@@ -57,6 +64,8 @@ Section Conjunction.
 
 End Conjunction.
 
+Global Instance prop_and : conjunction and conj proj1 proj2.
+
 (** [or A B], written [A \/ B], is the disjunction of [A] and [B] *)
 
 Inductive or (A B:Prop) : Prop :=
@@ -68,11 +77,30 @@ where "A \/ B" := (or A B) : type_scope.
 Arguments or_introl [A B] _, [A] B _.
 Arguments or_intror [A B] _, A [B] _.
 
+Global Instance prop_or : disjunction or or_introl or_intror or_ind.
+
 (** [iff A B], written [A <-> B], expresses the equivalence of [A] and [B] *)
 
 Definition iff (A B:Prop) := (A -> B) /\ (B -> A).
 
 Notation "A <-> B" := (iff A B) : type_scope.
+
+Definition iff_intro (A B:Prop) : (A -> B) -> (B -> A) -> (A <-> B).
+Proof.
+  intros; apply conj; trivial.
+Qed.
+
+Definition iff_elim1 (A B:Prop) : (A <-> B) -> A -> B.
+Proof.
+  destruct 1; trivial.
+Qed.
+
+Definition iff_elim2 (A B:Prop) : (A <-> B) -> B -> A.
+Proof.
+  destruct 1; trivial.
+Qed.
+
+Global Instance prop_iff : equivalence iff iff_intro iff_elim1 iff_elim2.
 
 Section Equivalence.
 
@@ -94,7 +122,6 @@ Theorem iff_sym : forall A B:Prop, (A <-> B) -> (B <-> A).
 End Equivalence.
 
 Hint Unfold iff: extcore.
-
 
 (** Backward direction of the equivalences above does not need assumptions *)
 
@@ -160,13 +187,15 @@ Qed.
 
 Theorem and_assoc : forall A B C : Prop, (A /\ B) /\ C <-> A /\ B /\ C.
 Proof.
-  intros; split; [ intros [[? ?] ?]| intros [? [? ?]]]; repeat split; assumption.
+  intros; split; [ intros [[? ?] ?]| intros [? [? ?]]];
+  repeat split; assumption.
 Qed.
 
 Theorem or_cancel_l : forall A B C : Prop,
   (B -> ~ A) -> (C -> ~ A) -> ((A \/ B <-> A \/ C) <-> (B <-> C)).
 Proof.
-  intros ? ? ? Fl Fr; split; [ | apply or_iff_compat_l]; intros [Hl Hr]; split; intros.
+  intros ? ? ? Fl Fr; split; [ | apply or_iff_compat_l]; intros [Hl Hr];
+  split; intros.
   { destruct Hl; [ right | destruct Fl | ]; assumption. }
   { destruct Hr; [ right | destruct Fr | ]; assumption. }
 Qed.
@@ -174,7 +203,8 @@ Qed.
 Theorem or_cancel_r : forall A B C : Prop,
   (B -> ~ A) -> (C -> ~ A) -> ((B \/ A <-> C \/ A) <-> (B <-> C)).
 Proof.
-  intros ? ? ? Fl Fr; split; [ | apply or_iff_compat_r]; intros [Hl Hr]; split; intros.
+  intros ? ? ? Fl Fr; split; [ | apply or_iff_compat_r]; intros [Hl Hr];
+  split; intros.
   { destruct Hl; [ left | | destruct Fl ]; assumption. }
   { destruct Hr; [ left | | destruct Fr ]; assumption. }
 Qed.
@@ -201,17 +231,13 @@ Qed.
 
 Lemma iff_to_and : forall A B : Prop, (A <-> B) <-> (A -> B) /\ (B -> A).
 Proof.
-  intros; split; intros [Hl Hr]; (split; intros; [ apply Hl | apply Hr]); assumption.
+  intros; split; intros [Hl Hr]; (split; intros; [ apply Hl | apply Hr]);
+  assumption.
 Qed.
 
+Global Instance prop_propositional :
+  propositional_logic prop_and prop_or not prop_iff prop_True prop_False Prop.
 
-Global Instance prop_logic : logic_kind Prop := fun x => x.
-Global Instance prop_propositional : propositional_logic
-  iff and or not True False Prop 
-  I
-  (fun A B (p:iff A B)=> proj1 p) (fun A B (p:iff A B) => proj2 p)
-  conj.
-(*Instance prop_is_dflt : default_logic := {|log:=prop_logic|}.*)
 
 (** [(IF_then_else P Q R)], written [IF P then Q else R] denotes
     either [P] and [Q], or [~P] and [Q] *)
@@ -263,6 +289,7 @@ Notation "'exists2' x : t , p & q" := (ex2 (fun x:t => p) (fun x:t => q))
     format "'[' 'exists2'  '/  ' x  :  t ,  '/  ' '[' p  &  '/' q ']' ']'")
   : type_scope.
 
+
 (** Derived rules for universal quantification *)
 
 Section universal_quantification.
@@ -282,7 +309,7 @@ Section universal_quantification.
 
 End universal_quantification.
 
-Global Instance prop_fo_logic : first_order_logic ex.
+Global Instance prop_fo_logic : first_order_logic ex ex_intro ex_ind.
 
 (** Declaring the full_logic instance *)
 Global Instance prop_full_logic : full_logic prop_propositional prop_fo_logic.
@@ -385,14 +412,16 @@ End EqNotations.
 
 Import EqNotations.
 
-Lemma rew_opp_r : forall A (P:A->Type) (x y:A) (H:x=y) (a:P y), rew H in rew <- H in a = a.
+Lemma rew_opp_r A (P:A->Type) (x y:A) (H:x=y) (a:P y):
+  rew H in rew <- H in a = a.
 Proof.
 intros.
 destruct H.
 reflexivity.
 Defined.
 
-Lemma rew_opp_l : forall A (P:A->Type) (x y:A) (H:x=y) (a:P x), rew <- H in rew H in a = a.
+Lemma rew_opp_l A (P:A->Type) (x y:A) (H:x=y) (a:P x):
+  rew <- H in rew H in a = a.
 Proof.
 intros.
 destruct H.
@@ -435,7 +464,8 @@ Qed.
 Global Instance prop_eq_logic :
   equational_logic (@eq) (@eq_ind) (@eq_refl) (@eq_sym) (@eq_trans) (@f_equal).
 
-Global Instance prop_full_eq_logic : full_eq_logic prop_propositional prop_fo_logic prop_eq_logic | 1.
+Global Instance prop_full_eq_logic :
+  full_eq_logic prop_propositional prop_fo_logic prop_eq_logic | 1.
 
 (* Aliases *)
 

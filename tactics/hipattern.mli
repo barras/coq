@@ -112,6 +112,7 @@ type equation_kind =
   | MonomorphicLeibnizEq of constr * constr
   | PolymorphicLeibnizEq of constr * constr * constr
   | HeterogenousEq of constr * constr * constr * constr
+  | OtherInductiveEquality
 
 exception NoEquationFound
 

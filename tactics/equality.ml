@@ -749,7 +749,7 @@ let ind_scheme_of_eq lbeq =
 
 let discrimination_pf e (t,t1,t2) discriminator lbeq =
   let logic = lbeq.eq_logic in
-  let i           = logic.log_I in
+  let i           = logic.log_TrueI in
   let absurd_term = logic.log_False in
 (*  let eq_elim     = ind_scheme_of_eq lbeq.eq_data in*)
   (mkApp(lbeq.eq_data.ind,
@@ -1189,6 +1189,8 @@ let swap_equality_args = function
   | MonomorphicLeibnizEq (e1,e2) -> [e2;e1]
   | PolymorphicLeibnizEq (t,e1,e2) -> [t;e2;e1]
   | HeterogenousEq (t1,e1,t2,e2) -> [t2;e2;t1;e1]
+  | OtherInductiveEquality ->
+    error "Cannot handle this inductive equality type"
 
 let swap_equands gls eqn =
   let (lbeq,eq_args) = find_eq_data eqn in

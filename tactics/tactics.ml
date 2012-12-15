@@ -1777,10 +1777,10 @@ let letin_tac_gen with_eq name (sigmac,c) test ty occs gl =
 	| IntroFresh heq_base -> fresh_id [id] heq_base gl
         | IntroIdentifier id -> id
 	| _ -> error"Expect an introduction pattern naming one hypothesis." in
-      let eqdata = Std.build_coq_eq_data () in
+      let eqdata = Coqlib.find_equality (Global.env()) None in
       let args = if lr then [t;mkVar id;c] else [t;c;mkVar id]in
-      let eq = applist (eqdata.eq,args) in
-      let refl = applist (eqdata.refl, [t;mkVar id]) in
+      let eq = applist (eqdata.eq_data.eq,args) in
+      let refl = applist (eqdata.eq_data.refl, [t;mkVar id]) in
       mkNamedLetIn id c t (mkLetIn (Name heq, refl, eq, ccl)),
       tclTHEN
 	(intro_gen loc (IntroMustBe heq) lastlhyp true false)
@@ -2279,8 +2279,9 @@ let error_ind_scheme s =
   let s = if not (String.equal s "") then s^" " else s in
   error ("Cannot recognize "^s^"an induction scheme.")
 
-let coq_eq = Lazy.lazy_from_fun Coqlib.Std.build_coq_eq
-let coq_eq_refl = lazy ((Coqlib.Std.build_coq_eq_data ()).Coqlib.refl)
+let coq_eqd = lazy (Coqlib.Std.coq_eq_equality())
+let coq_eq = lazy ((Lazy.force coq_eqd).eq_data.eq)
+let coq_eq_refl = lazy ((Lazy.force coq_eqd).eq_data.refl)
 
 let coq_heq = lazy (Coqlib.coq_constant "mkHEq" ["Logic";"JMeq"] "JMeq")
 let coq_heq_refl = lazy (Coqlib.coq_constant "mkHEq" ["Logic";"JMeq"] "JMeq_refl")
@@ -3356,11 +3357,15 @@ let reflexivity_red allowred gl =
      for an equality, but we may need to do some when called back from
      inside setoid_reflexivity (see Optimize cases in setoid_replace.ml). *)
   let concl = if not allowred then pf_concl gl
-  else whd_betadeltaiota (pf_env gl) (project gl) (pf_concl gl)
+    else whd_betadeltaiota (pf_env gl) (project gl) (pf_concl gl)
   in
-    match match_with_equality_type concl with
-    | None -> raise NoEquationFound
-    | Some _ -> one_constructor 1 NoBindings gl
+  match match_with_equation concl with
+    | Some eq_data,_,_ ->
+      tclTHEN
+        (convert_concl_no_check concl DEFAULTcast)
+	(apply eq_data.eq_data.refl) gl
+    | None,_,_ ->
+      one_constructor 1 NoBindings gl
 
 let reflexivity gl =
   try reflexivity_red false gl with NoEquationFound -> !setoid_reflexivity gl
@@ -3383,7 +3388,9 @@ let prove_symmetry hdcncl eq_kind =
     match eq_kind with
     | MonomorphicLeibnizEq (c1,c2) -> mkApp(hdcncl,[|c2;c1|])
     | PolymorphicLeibnizEq (typ,c1,c2) -> mkApp(hdcncl,[|typ;c2;c1|])
-    | HeterogenousEq (t1,c1,t2,c2) -> mkApp(hdcncl,[|t2;c2;t1;c1|]) in
+    | HeterogenousEq (t1,c1,t2,c2) -> mkApp(hdcncl,[|t2;c2;t1;c1|])
+    | OtherInductiveEquality ->
+      error "Cannot handle this inductive equality type" in
   tclTHENFIRST (cut symc)
     (tclTHENLIST
       [ intro;
@@ -3418,7 +3425,9 @@ let symmetry_in id gl =
     let symccl = match eq with
       | MonomorphicLeibnizEq (c1,c2) -> mkApp (hdcncl, [| c2; c1 |])
       | PolymorphicLeibnizEq (typ,c1,c2) -> mkApp (hdcncl, [| typ; c2; c1 |])
-      | HeterogenousEq (t1,c1,t2,c2) -> mkApp (hdcncl, [| t2; c2; t1; c1 |]) in
+      | HeterogenousEq (t1,c1,t2,c2) -> mkApp (hdcncl, [| t2; c2; t1; c1 |])
+      | OtherInductiveEquality ->
+	error "Cannot handle this inductive equality type" in
     tclTHENS (cut (it_mkProd_or_LetIn symccl sign))
       [ intro_replacing id;
         tclTHENLIST [ intros; symmetry; apply (mkVar id); assumption ] ]
@@ -3452,12 +3461,14 @@ let prove_transitivity hdcncl eq_kind t gl =
     match eq_kind with
     | MonomorphicLeibnizEq (c1,c2) ->
       (mkApp (hdcncl, [| c1; t|]), mkApp (hdcncl, [| t; c2 |]))
-  | PolymorphicLeibnizEq (typ,c1,c2) ->
+    | PolymorphicLeibnizEq (typ,c1,c2) ->
       (mkApp (hdcncl, [| typ; c1; t |]), mkApp (hdcncl, [| typ; t; c2 |]))
-  | HeterogenousEq (typ1,c1,typ2,c2) ->
+    | HeterogenousEq (typ1,c1,typ2,c2) ->
       let typt = pf_type_of gl t in
       (mkApp(hdcncl, [| typ1; c1; typt ;t |]),
-       mkApp(hdcncl, [| typt; t; typ2; c2 |])) in
+       mkApp(hdcncl, [| typt; t; typ2; c2 |]))
+    | OtherInductiveEquality ->
+      error "Cannot handle this inductive equality type" in
   tclTHENFIRST (cut eq2)
     (tclTHENFIRST (cut eq1)
       (tclTHENLIST

@@ -111,22 +111,19 @@ let has_changed check () =
   fun x ->
     match !oldv with
 	None ->
-	  message "cache: first";
 	  oldv := Some (check x); true
-      | Some ov ->
-	let b = not (check x = ov) in
-	if b then message "cache: outdated";
-	b
+      | Some ov -> not (check x = ov)
 
 
-(** Signature of a logic. Needs to be completed! *)
+(** Signature of a logic. *)
 type coq_logic = {
   (** The False proposition *)
   log_False : constr;
+  log_FalseE : constr;
 
   (** The True proposition and its unique proof *)
   log_True : constr;
-  log_I : constr;
+  log_TrueI : constr;
 
   (** The "minimal sort" containing both True and False *)
   log_bottom_sort : sorts;
@@ -136,16 +133,26 @@ type coq_logic = {
 
   (** Conjunction *)
   log_and : constr;
-  log_conj : constr;
-  log_iff : constr;
-  log_iff_left : constr;
-  log_iff_right : constr;
+  log_andI : constr;
+  log_andE1 : constr;
+  log_andE2 : constr;
+
 
   (** Disjunction *)
   log_or : constr;
+  log_orI1 : constr;
+  log_orI2 : constr;
+
+  (* Equivalence *)
+  log_iff : constr;
+  log_iffI : constr;
+  log_iffE1 : constr;
+  log_iffE2 : constr;
 
   (** Existential quantifier *)
-  log_ex : constr
+  log_ex : constr;
+  log_exI : constr;
+  log_exE : constr
 }
 
 type logic_id = sorts
@@ -153,27 +160,44 @@ type logic_id = sorts
 let pos_in_ctxt label ctxt =
   let na = Name(id_of_string label) in
   let ids (id,bd,_) = match bd with None -> Some id | _ -> None in
-  (* List.index is based at 1! *)
-  List.index na (List.rev (CList.map_filter ids ctxt)) - 1
+  List.index0 na (List.rev (CList.map_filter ids ctxt))
+
+(** This definition is related to LogicClasses.full_logic *)
+let build_logic_record args =
+  let n = 30 in
+  assert (Array.length args >= n);
+  let (largs,rargs) = Array.chop n args in
+  (match largs with
+      [|kind;_logic;
+	and_; andI; andE1; andE2; _And;
+        or_; orI1; orI2; orE; _Or;
+        neg;
+        iff; iffI; iffE1; iffE2; _Iff;
+        tr; trI; _True; fa;faE; _False; tknd; _proplogic;
+        ex; exI; exE; _fologic|] ->
+	let tknd =
+	  if isSort tknd then destSort tknd else
+	    error "Instance of coq_full_logic expects a sort at field trivial_kind." in
+	{log_False=fa; log_FalseE=faE; log_True=tr; log_TrueI=trI; log_bottom_sort=tknd;
+	 log_not=neg; log_and=and_; log_andI=andI; log_andE1=andE1; log_andE2=andE2;
+	 log_or=or_; log_orI1=orI1; log_orI2=orI2;
+	 log_iff=iff; log_iffI=iffI; log_iffE1=iffE1; log_iffE2=iffE2;
+	 log_ex=ex; log_exI=exI; log_exE=exE},
+	rargs
+    | _ -> assert false)
 
 let full_logic_info = lazy
   (let cls = coq_reference "find_equality" ["Init";"LogicClasses"] "full_logic" in
    let cl = Typeclasses.class_info cls in
    let cl_ctxt = snd cl.cl_context in
-   let kind_pos = 0 in
+   (* Position of the kind in the vector of args *)
+   let kind_pos =
+     try pos_in_ctxt "X" cl_ctxt
+     with Not_found -> assert false in
    let build_record args =
-     match args with
-	 [|kind; _logic;
-	   iff; conj; disj; neg; tr; fa; tkind; i; ifflr; iffrl; conjI; _propositional;
-           ex; _fo_logic |] ->
-	   let tkind =
-	     if isSort tkind then destSort tkind else
-	       error "Instance of coq_full_logic expects a sort at field trivial_kind." in
-	   {log_False=fa;log_True=tr;log_I=i;
-	    log_bottom_sort=tkind; log_not=neg; log_and=conj; log_conj=conjI;
-	    log_iff=iff; log_iff_left=ifflr; log_iff_right=iffrl; log_or=disj;
-	    log_ex=ex }
-       | _ -> anomaly "Coqlib.find_logic: typeclass coq_full_logic has wrong arity" in
+     let (log,rargs) = build_logic_record args in
+     assert (Array.length rargs = 0);
+     log in
    (cls,cl_ctxt,build_record,kind_pos))
 
 let instances_of gr _id =
@@ -182,6 +206,7 @@ let instances_of gr _id =
 let logic_instances =
   lazy(let (cls,_,_,_)=Lazy.force full_logic_info in cls)
 
+(** Note: only the logic declared using full_logic are considered here! *)
 let find_all_logics () =
   (* Retrieve data about the 'full_logic' class *)
   let (cls,cl_ctxt,build_record,kind_pos) = Lazy.force full_logic_info in
@@ -241,7 +266,6 @@ let find_logic =
     else
       (try Gmap.find lid !c
        with Not_found ->
-	 message("Logic cache: miss");
 	 eval_and_cache env lid) in
   cached_fun
 
@@ -289,6 +313,16 @@ let typeclass_search (clslib,cls) =
     anomaly ("Class '"^cls^"' does not have the expected parameters.");
   (cl_ctxt,lid)
 *)
+
+(* Building the structure from the list of arguments *)
+let build_eq_record args =
+  let (log,rargs) = build_logic_record args in
+  match rargs with
+      [|eq;ind;refl;sym;trans;congr;_eqlogic|] ->
+	{eq_logic=log;
+	 eq_data={eq=eq;ind=ind;refl=refl;sym=sym;trans=trans;congr=congr};
+	 eq_inv=(fun()->failwith"find_equality: not implemented")}
+    | _ -> assert false
   
 (* Lazily compute relevant info about the full_eq_logic typeclass *)
 let full_eq_logic_info = lazy
@@ -299,24 +333,7 @@ let full_eq_logic_info = lazy
    let eqpos =
      try pos_in_ctxt "eq" cl_ctxt
      with Not_found -> anomaly "Class full_eq_logic should have an argument named 'eq'." in
-   (* Building the structure from the list of arguments *)
-   let build_record args =
-     match args with
-	 [|kind; _logic;
-	   iff; conj; disj; neg; tr; fa; tkind; i; ifflr; iffrl; conjI; _propositional;
-           ex; _fo_logic;
-	   eq; ind; refl; sym; trans; congr; _eq_logic|] ->
-	   let tkind =
-	     if isSort tkind then destSort tkind else
-	       error "Instance of coq_full_logic expects a sort at field trivial_kind." in
-	   {eq_logic={log_False=fa;log_True=tr;log_I=i;
-		      log_bottom_sort=tkind; log_not=neg; log_and=conj; log_conj=conjI;
-		      log_iff=iff; log_iff_left=ifflr; log_iff_right=iffrl; log_or=disj;
-		      log_ex=ex };
-	    eq_data={eq=eq;ind=ind;refl=refl;sym=sym;trans=trans;congr=congr};
-	    eq_inv=(fun()->failwith"find_equality: not implemented")}
-       | _ -> anomaly "Coqlib.find_equality: typeclass coq_full_logic has wrong arity" in
-   (cls,cl_ctxt,build_record,eqpos))
+   (cls,cl_ctxt,build_eq_record,eqpos))
 (*
 let (lookup_equality, clear_equality_cache) =
   create_cache
@@ -324,16 +341,21 @@ let (lookup_equality, clear_equality_cache) =
     ~upd:(instances_changed lazy(let (cls,_,_,_)=Lazy.force full_logic_info in cls))
     ()
 *)
+let build_eq_from_instance i =
+  let (cls,cl_ctxt,build_record,eqpos) = Lazy.force full_eq_logic_info in
+  let env = Global.env() in
+  let ty = Retyping.get_type_of env Evd.empty i in
+  if isApp ty then build_record (snd (destApp ty))
+  else raise Not_found
+
 let find_all_equalities () =
   (* Retrieve data about the 'full_eq_logic' class *)
   let (cls,cl_ctxt,build_record,eqpos) = Lazy.force full_eq_logic_info in
   let inst = Typeclasses.instances cls in
-  let env = Global.env() in
   let build i =
-    let ty = Retyping.get_type_of env Evd.empty (constr_of_global (instance_impl i)) in
-    if isApp ty then Some (build_record (snd (destApp ty)))
-    else None in
-  List.fold_right (fun eq_ins ll -> match build eq_ins with Some l -> l::ll | None -> ll) 
+    build_eq_from_instance (constr_of_global (instance_impl i)) in
+  List.fold_right
+    (fun eq_ins ll -> try build eq_ins :: ll with Not_found -> ll)
     inst []
 
 let find_equality env eid =
@@ -380,7 +402,6 @@ let find_equality =
     else
       (try Gmap.find eid !c
        with Not_found ->
-	 msgnl(str"Eq cache: miss "++match eid with None->mt()|Some e->Termops.print_constr e);
 	 eval_and_cache env eid) in
   cached_fun
 
@@ -544,41 +565,6 @@ let build_sigma () =
     intro = init_constant ["Specif"] "exist";
     typ = init_constant ["Specif"] "sig" }
 
-
-(* The False proposition *)
-let coq_False  = lazy_init_constant ["Logic"] "False"
-
-(* The True proposition and its unique proof *)
-let coq_True   = lazy_init_constant ["Logic"] "True"
-let coq_I      = lazy_init_constant ["Logic"] "I"
-
-(* Connectives *)
-let coq_not = lazy_init_constant ["Logic"] "not"
-let coq_and = lazy_init_constant ["Logic"] "and"
-let coq_conj = lazy_init_constant ["Logic"] "conj"
-let coq_or = lazy_init_constant ["Logic"] "or"
-let coq_ex = lazy_init_constant ["Logic"] "ex"
-let coq_iff = lazy_init_constant ["Logic"] "iff"
-
-let coq_iff_left_proj  = lazy_init_constant ["Logic"] "proj1"
-let coq_iff_right_proj = lazy_init_constant ["Logic"] "proj2"
-
-let build_coq_True ()  = Lazy.force coq_True
-let build_coq_I ()     = Lazy.force coq_I
-
-let build_coq_False () = Lazy.force coq_False
-let build_coq_not ()   = Lazy.force coq_not
-
-let build_coq_and ()   = Lazy.force coq_and
-let build_coq_conj ()  = Lazy.force coq_conj
-let build_coq_iff ()   = Lazy.force coq_iff
-
-let build_coq_iff_left_proj ()  = Lazy.force coq_iff_left_proj
-let build_coq_iff_right_proj () = Lazy.force coq_iff_right_proj
-
-let build_coq_or ()    = Lazy.force coq_or
-let build_coq_ex ()    = Lazy.force coq_ex
-
 let coq_eq_ref      = lazy (init_reference ["Logic"] "eq")
 let coq_identity_ref = lazy (init_reference ["Datatypes"] "identity")
 let coq_jmeq_ref     = lazy (gen_reference "Coqlib" ["Logic";"JMeq"] "JMeq")
@@ -592,20 +578,6 @@ let coq_sig_ref = lazy (init_reference ["Specif"] "sig")
 let coq_or_ref     = lazy (init_reference ["Logic"] "or")
 let coq_iff_ref    = lazy (init_reference ["Logic"] "iff")
 
-let prop_logic() = {
-  log_False = build_coq_False();
-  log_True = build_coq_True();
-  log_I = build_coq_I();
-  log_bottom_sort = Prop Null;
-  log_not = build_coq_not();
-  log_and = build_coq_and();
-  log_conj = build_coq_conj();
-  log_iff = build_coq_iff();
-  log_iff_left = build_coq_iff_left_proj();
-  log_iff_right = build_coq_iff_right_proj();
-  log_or = build_coq_or();
-  log_ex = build_coq_ex()
-}
 
 (** Equality *)
 let eq_kn = make_kn logic_module (id_of_string "eq")
@@ -620,27 +592,12 @@ let glob_jmeq = IndRef (jmeq_kn,0)
 (* Leibniz equality on Type *)
 
 let coq_eq_eq = lazy_init_constant ["Logic"] "eq"
-let coq_eq_refl = lazy_init_constant ["Logic"] "eq_refl"
 let coq_eq_ind = lazy_init_constant ["Logic"] "eq_ind"
-let coq_eq_congr = lazy_init_constant ["Logic"] "f_equal"
-let coq_eq_sym  = lazy_init_constant ["Logic"] "eq_sym"
-let coq_eq_trans  = lazy_init_constant ["Logic"] "eq_trans"
 let coq_f_equal2 = lazy_init_constant ["Logic"] "f_equal2"
 let coq_eq_congr_canonical =
   lazy_init_constant ["Logic"] "f_equal_canonical_form"
 
-let build_coq_eq_data () =
-  let _ = check_required_library logic_module_name in {
-  eq = Lazy.force coq_eq_eq;
-  ind = Lazy.force coq_eq_ind;
-  refl = Lazy.force coq_eq_refl;
-  sym = Lazy.force coq_eq_sym;
-  trans = Lazy.force coq_eq_trans;
-  congr = Lazy.force coq_eq_congr }
-
 let build_coq_eq () = Lazy.force coq_eq_eq
-let build_coq_eq_refl () = Lazy.force coq_eq_refl
-let build_coq_eq_sym () = Lazy.force coq_eq_sym
 let build_coq_f_equal2 () = Lazy.force coq_f_equal2
 
 let build_coq_inversion_eq_data () =
@@ -649,10 +606,17 @@ let build_coq_inversion_eq_data () =
   inv_ind = Lazy.force coq_eq_ind;
   inv_congr = Lazy.force coq_eq_congr_canonical }
 
-let build_coq_eq_full () =
-  { eq_logic = prop_logic();
-    eq_data = build_coq_eq_data();
-    eq_inv = build_coq_inversion_eq_data }
+let coq_eq =
+  lazy
+    (let _ = check_required_library logic_module_name in
+     let i = init_constant ["Logic"] "prop_full_eq_logic" in
+     let r = build_eq_from_instance i in
+     { r with
+       eq_inv = build_coq_inversion_eq_data })
+
+let coq_eq_equality () = Lazy.force coq_eq
+let coq_prop_logic () = (Lazy.force coq_eq).eq_logic
+
 
 (* Equality on Type as a Type *)
 let coq_identity_eq = lazy_init_constant ["Datatypes"] "identity"
@@ -680,7 +644,7 @@ let build_coq_inversion_identity_data () =
   inv_congr = Lazy.force coq_identity_congr_canonical }
 
 let build_coq_identity_full () =
-  { eq_logic = prop_logic();
+  { eq_logic = coq_prop_logic();
     eq_data = build_coq_identity_data();
     eq_inv = build_coq_inversion_identity_data }
 
@@ -717,7 +681,7 @@ let build_coq_inversion_jmeq_data () =
 
 
 let build_coq_jmeq_full () =
-  { eq_logic = prop_logic();
+  { eq_logic = coq_prop_logic();
     eq_data = build_coq_jmeq_data();
     eq_inv = build_coq_inversion_jmeq_data }
 
