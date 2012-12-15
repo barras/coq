@@ -193,7 +193,7 @@ module GrammarMake (L:LexerSig) : GrammarSig = struct
   let entry_create = Entry.create
   let entry_parse e p =
     try Entry.parse e p
-    with Exc_located (loc,e) -> raise (Loc.Exc_located (to_coqloc loc,e))
+    with Exc_located (loc,e) -> raise (CoqLoc.Exc_located (to_coqloc loc,e))
 IFDEF CAMLP5_6_02_1 THEN
   let entry_print ft x = Entry.print ft x
 ELSE
@@ -219,6 +219,7 @@ module type GrammarSig = sig
   val srules' : production_rule list -> symbol
 end
 
+module CoqLoc = Loc (* avoid being shadowed by the include below! *)
 module GrammarMake (L:LexerSig) : GrammarSig = struct
   include Camlp4.Struct.Grammar.Static.Make (L)
   type 'a entry = 'a Entry.t
@@ -229,7 +230,7 @@ module GrammarMake (L:LexerSig) : GrammarSig = struct
   let entry_create = Entry.mk
   let entry_parse e s =
     try parse e (*FIXME*)CompatLoc.ghost s
-    with Exc_located (loc,e) -> raise (Loc.Exc_located (to_coqloc loc,e))
+    with Exc_located (loc,e) -> raise (CoqLoc.Exc_located (to_coqloc loc,e))
   let entry_print ft x = Entry.print ft x
   let srules' = srules (entry_create "dummy")
 end

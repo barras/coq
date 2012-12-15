@@ -370,7 +370,7 @@ let inductive_levels env evdref arities inds =
 let interp_mutual_inductive (paramsl,indl) notations poly finite =
   check_all_names_different indl;
   let env0 = Global.env() in
-  let evdref = ref Evd.(from_env env0) in
+  let evdref = ref (Evd.from_env env0) in
   let _, ((env_params, ctx_params), userimpls) =
     interp_context_evars evdref env0 paramsl
   in
