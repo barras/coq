@@ -112,25 +112,28 @@ type equation_kind =
   | MonomorphicLeibnizEq of constr * constr
   | PolymorphicLeibnizEq of constr * constr * constr
   | HeterogenousEq of constr * constr * constr * constr
+  | OtherInductiveEquality
 
 exception NoEquationFound
 
 val match_with_equation:
-  constr -> coq_eq_data option * constr * equation_kind
+  constr -> coq_equality option * constr * equation_kind
 
 (***** Destructing patterns bound to some theory *)
 
 (** Match terms [eq A t u], [identity A t u] or [JMeq A t A u] 
    Returns associated lemmas and [A,t,u] or fails PatternMatchingFailure *)
 val find_eq_data_decompose : Proof_type.goal sigma -> constr ->
-  coq_eq_data Univ.in_universe_context_set * (types * constr * constr)
+      coq_equality Univ.in_universe_context_set * (types * constr * constr)
 
 (** Idem but fails with an error message instead of PatternMatchingFailure *)
 val find_this_eq_data_decompose : Proof_type.goal sigma -> constr ->
-  coq_eq_data Univ.in_universe_context_set * (types * constr * constr)
+      coq_equality Univ.in_universe_context_set * (types * constr * constr)
 
 (** A variant that returns more informative structure on the equality found *)
-val find_eq_data : Environ.env -> constr -> coq_eq_data Univ.in_universe_context_set * equation_kind
+val find_eq_data :
+  Environ.env -> constr ->
+  coq_equality Univ.in_universe_context_set * equation_kind
 
 (** Match a term of the form [(existT A P t p)] 
    Returns associated lemmas and [A,P,t,p] *)
@@ -146,10 +149,10 @@ val is_matching_sigma : constr -> bool
    [t,u,T] and a boolean telling if equality is on the left side *)
 val match_eqdec : constr -> bool * constr * constr * constr * constr
 
-(** Match an equality up to conversion; returns [(eq,t1,t2)] in normal form *)
+(** Match an equality; returns [(eq,t1,t2)]
+    (it was supposed to be up to conversion, but the code actual doesn't do it) *)
 open Proof_type
 open Tacmach
-val dest_nf_eq : goal sigma -> constr -> (constr * constr * constr)
 
 (** Match a negation *)
 val is_matching_not : constr -> bool

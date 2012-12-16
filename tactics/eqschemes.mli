@@ -12,6 +12,7 @@ open Names
 open Term
 open Environ
 open Ind_tables
+open Coqlib
 
 (** Builds a left-to-right rewriting scheme for an equality type *)
 
@@ -42,5 +43,6 @@ val sym_involutive_scheme_kind : individual scheme_kind
 (** Builds a congruence scheme for an equality type *)
 
 val congr_scheme_kind : individual scheme_kind
-val build_congr : env -> constr * constr * Univ.universe_context_set -> inductive -> 
+val build_congr :
+  env -> coq_equality * Univ.universe_context_set -> inductive -> 
   constr Evd.in_evar_universe_context

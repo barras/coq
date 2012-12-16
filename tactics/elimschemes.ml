@@ -44,7 +44,7 @@ let optimize_non_type_induction_scheme kind dep sort ind =
     let sigma, sort = Evd.fresh_sort_in_family env sigma sort in
     let sigma, t', c' = weaken_sort_scheme env sigma true sort npars c t in
     let sigma, nf = Evarutil.nf_evars_and_universes sigma in
-      nf c, Evd.evar_universe_context sigma
+      nf c', Evd.evar_universe_context sigma
   else
     let sigma, indu = Evd.fresh_inductive_instance env sigma ind in
     let sigma, c = build_induction_scheme env sigma indu dep sort in

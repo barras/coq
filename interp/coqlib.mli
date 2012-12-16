@@ -54,11 +54,9 @@ val check_required_library : string list -> unit
 (** {6 Global references } *)
 
 (** Modules *)
-val logic_module : dir_path
 val logic_type_module : dir_path
 
 val datatypes_module_name : string list
-val logic_module_name : string list
 
 (** Natural numbers *)
 val nat_path : full_path
@@ -75,12 +73,97 @@ val path_of_false : constructor
 val glob_true : global_reference
 val glob_false : global_reference
 
+(************************************************************************)
+(** A generic notion of logic *)
 
-(** Equality *)
-val glob_eq : global_reference
-val glob_identity : global_reference
-val glob_jmeq : global_reference
+type coq_logic = {
+  (** The False proposition *)
+  log_False : constr;
+  log_FalseE : constr;
 
+  (** The True proposition and its unique proof *)
+  log_True : constr;
+  log_TrueI : constr;
+
+  (** The "minimal sort" containing both True and False *)
+  log_bottom_sort : sorts;
+
+  (** Negation *)
+  log_not : constr;
+
+  (** Conjunction *)
+  log_and : constr;
+  log_andI : constr;
+  log_andE1 : constr;
+  log_andE2 : constr;
+
+  (** Disjunction *)
+  log_or : constr;
+  log_orI1 : constr;
+  log_orI2 : constr;
+
+  (* Equivalence *)
+  log_iff : constr;
+  log_iffI : constr;
+  log_iffE1 : constr;
+  log_iffE2 : constr;
+
+  (** Existential quantifier *)
+  log_ex : constr;
+  log_exI : constr;
+  log_exE : constr
+}
+
+(** Lookup for a logic. The logic_id is a "key" to search the
+    logic corresponding to (for instance) the type of its
+    propositions. *)
+type logic_id = sorts
+val find_logic : Environ.env -> logic_id option -> coq_logic
+
+(** Linear search for a logic satisfying a predicate. Only the
+    logics declared through the full_logic will be considered
+    by search_logic. *)
+val search_logic : (coq_logic -> bool) -> coq_logic list
+
+(************************************************************************)
+
+type coq_eq_data = {
+  eq   : constr; (* forall A, A -> A -> s *)
+  ind  : constr; (* forall A x P, P x -> forall y, eq x y -> P y *)
+  refl : constr; (* forall A x, eq x x *)
+  sym  : constr; (* forall A x y, eq x y -> eq y x *)
+  trans: constr; (* forall A x y z, eq x y -> eq y z -> eq x z *)
+  congr: constr  (* forall A B (f:A->B) x y, eq x y -> eq (f x) (f y) *)
+}
+
+(** Data needed for discriminate and injection *)
+
+type coq_inversion_data = {
+  inv_eq   : constr; (** : forall params, args -> Prop *)
+  inv_ind  : constr; (** : forall params P (H : P params) args, eq params args 
+			 ->  P args *)
+  inv_congr: constr  (** : forall params B (f:t->B) args, eq params args -> 
+			 f params = f args *)
+}
+
+type coq_equality = {
+  eq_logic : coq_logic;
+  eq_data : coq_eq_data;
+  eq_inv : coq_inversion_data delayed
+}
+
+(** Equalities are identified by the connective (eq,identity,etc.) *)
+type equality_id = constr
+
+(** Look up and linear search for an equational theory (and the associated
+    logic). As above, only the instances declared through full_eq_logic will
+    be considered by search_equality. *)
+val find_equality : Environ.env -> equality_id option -> coq_equality
+val find_equality_in :
+  Environ.env -> equality_id option -> coq_equality Univ.in_universe_context_set
+val search_equality : (coq_equality -> bool) -> coq_equality list
+
+(************************************************************************)
 (** {6 ... } *)
 (** Constructions and patterns related to Coq initial state are unknown
    at compile time. Therefore, we can only provide methods to build
@@ -102,83 +185,50 @@ type coq_sigma_data = {
   elim  : constr;
   intro : constr;
   typ   : constr }
-
-val build_sigma_set : coq_sigma_data delayed
 val build_sigma_type : coq_sigma_data delayed
-val build_sigma : coq_sigma_data delayed
+val coq_existT_ref : global_reference lazy_t
 
 (** Non-dependent pairs in Set from Datatypes *)
 val build_prod : coq_sigma_data delayed
 
-type coq_eq_data = {
-  eq   : constr;
-  ind  : constr;
-  refl : constr;
-  sym  : constr;
-  trans: constr;
-  congr: constr }
+(** Specif and decidability *)
+val build_coq_sumbool : constr delayed
 
-val build_coq_eq_data : coq_eq_data delayed
-val build_coq_eq_data_in : Environ.env -> coq_eq_data Univ.in_universe_context_set
+(** A (soon deprecated?) module [roviding access to constants of
+    the standard library by their name. For logic and theory of
+    equality, it is advised to use the above API. *)
+
+module Std : sig
+
+val logic_module : dir_path
+val logic_module_name : string list
+
+val coq_eq_equality : coq_equality delayed
+val coq_prop_logic : coq_logic delayed
+(* Is it really neede when eq is in Prop?*)
+val coq_eq_equality_in :
+  Environ.env -> coq_equality Univ.in_universe_context_set
+
+(** Equality *)
+val glob_eq : global_reference
+val glob_identity : global_reference
+val glob_jmeq : global_reference
 
 val build_coq_identity_data : coq_eq_data delayed
 val build_coq_jmeq_data : coq_eq_data delayed
+val build_coq_jmeq_full : coq_equality delayed
 
-val build_coq_eq       : constr delayed (** = [(build_coq_eq_data()).eq] *)
-val build_coq_eq_refl  : constr delayed (** = [(build_coq_eq_data()).refl] *)
-val build_coq_eq_sym   : constr delayed (** = [(build_coq_eq_data()).sym] *)
 val build_coq_f_equal2 : constr delayed
 
-(** Data needed for discriminate and injection *)
-
-type coq_inversion_data = {
-  inv_eq   : constr; (** : forall params, args -> Prop *)
-  inv_ind  : constr; (** : forall params P (H : P params) args, eq params args 
-			 ->  P args *)
-  inv_congr: constr  (** : forall params B (f:t->B) args, eq params args -> 
-			 f params = f args *)
-}
-
-val build_coq_inversion_eq_data : coq_inversion_data delayed
 val build_coq_inversion_identity_data : coq_inversion_data delayed
 val build_coq_inversion_jmeq_data : coq_inversion_data delayed
 val build_coq_inversion_eq_true_data : coq_inversion_data delayed
-
-(** Specif *)
-val build_coq_sumbool : constr delayed
-
-(** {6 ... } *)
-(** Connectives 
-   The False proposition *)
-val build_coq_False : constr delayed
-
-(** The True proposition and its unique proof *)
-val build_coq_True : constr delayed
-val build_coq_I : constr delayed
-
-(** Negation *)
-val build_coq_not : constr delayed
-
-(** Conjunction *)
-val build_coq_and : constr delayed
-val build_coq_conj : constr delayed
-val build_coq_iff : constr delayed
-
-val build_coq_iff_left_proj : constr delayed
-val build_coq_iff_right_proj : constr delayed
-
-(** Disjunction *)
-val build_coq_or : constr delayed
-
-(** Existential quantifier *)
-val build_coq_ex : constr delayed
 
 val coq_eq_ref : global_reference lazy_t
 val coq_identity_ref : global_reference lazy_t
 val coq_jmeq_ref : global_reference lazy_t
 val coq_eq_true_ref : global_reference lazy_t
 val coq_existS_ref : global_reference lazy_t
-val coq_existT_ref : global_reference lazy_t
 val coq_exist_ref : global_reference lazy_t
 val coq_not_ref : global_reference lazy_t
 val coq_False_ref : global_reference lazy_t
@@ -187,3 +237,9 @@ val coq_sig_ref : global_reference lazy_t
 
 val coq_or_ref : global_reference lazy_t
 val coq_iff_ref : global_reference lazy_t
+
+(** Sigma (sig and sigS) *)
+val build_sigma : coq_sigma_data delayed
+val build_sigma_set : coq_sigma_data delayed
+
+end

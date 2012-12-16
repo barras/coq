@@ -20,6 +20,7 @@ open Term
 open Pp
 open Decl_kinds
 open Misctypes
+open Coqlib
 
 (* INTERN *)
 
@@ -157,7 +158,9 @@ let special_whd env =
   let infos=Closure.create_clos_infos Closure.betadeltaiota env in
     (fun t -> Closure.whd_val infos (Closure.inject t))
 
-let _eq = lazy (Universes.constr_of_global (Coqlib.glob_eq))
+
+let _eq =
+  lazy (find_equality(Global.env())None).eq_data.eq
 
 let decompose_eq env id =
   let typ = Environ.named_type id env in

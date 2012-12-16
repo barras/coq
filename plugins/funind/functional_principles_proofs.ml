@@ -410,9 +410,7 @@ let rewrite_until_var arg_num eq_ids : tactic =
 
 let rec_pte_id = id_of_string "Hrec"
 let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
-  let coq_False = Coqlib.build_coq_False () in
-  let coq_True = Coqlib.build_coq_True () in
-  let coq_I = Coqlib.build_coq_I () in
+  let log = Coqlib.find_logic (Global.env()) None in
   let rec scan_type  context type_of_hyp : tactic =
     if isLetIn type_of_hyp then
       let real_type_of_hyp = it_mkProd_or_LetIn type_of_hyp context in
@@ -470,7 +468,7 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
 		scan_type context popped_t'
 	      ]
 	  end
-	else if eq_constr t_x coq_False then
+	else if eq_constr t_x log.Coqlib.log_False then
 	  begin
 (* 	    observe (str "Removing : "++ Ppconstr.pr_id hyp_id++  *)
 (* 		       str " since it has False in its preconds " *)
@@ -478,7 +476,7 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
 	    raise TOREMOVE;  (* False -> .. useless *)
 	  end
 	else if is_incompatible_eq t_x then raise TOREMOVE (* t_x := C1 ... =  C2 ... *)
-	else if eq_constr t_x coq_True  (* Trivial => we remove this precons *)
+	else if eq_constr t_x log.Coqlib.log_True  (* Trivial => we remove this precons *)
 	then
 (* 	    observe (str "In "++Ppconstr.pr_id hyp_id++  *)
 (* 		       str " removing useless precond True" *)
@@ -497,7 +495,7 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
 		 in
 		 let to_refine =
 		   applist (mkVar hyp_id,
-			    List.rev (coq_I::List.map mkVar context_hyps)
+			    List.rev (log.Coqlib.log_TrueI::List.map mkVar context_hyps)
 			   )
 		 in
 		 refine to_refine g

@@ -58,6 +58,13 @@ val new_evar_instance :
 
 val make_pure_subst : evar_info -> constr array -> (identifier * constr) list
 
+(** Given a context, creates a list of fresh evars and returns the list of evars (as an
+    array of argument), and a subtitution to be applied to terms in the original context. *)
+val evar_instance_of_context :
+  evar_map -> named_context_val -> rel_context ->
+  evar_map * constr array * constr list
+
+
 (** {6 Instantiate evars} *)
 
 type conv_fun =

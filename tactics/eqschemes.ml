@@ -56,6 +56,7 @@ open Namegen
 open Inductiveops
 open Ind_tables
 open Indrec
+open Coqlib
 
 let hid = id_of_string "H"
 let xid = id_of_string "X"
@@ -75,16 +76,6 @@ let my_it_mkLambda_or_LetIn s c = it_mkLambda_or_LetIn c s
 let my_it_mkProd_or_LetIn s c = it_mkProd_or_LetIn c s
 let my_it_mkLambda_or_LetIn_name s c =
   it_mkLambda_or_LetIn_name (Global.env()) c s
-
-let get_coq_eq ctx =
-  try
-    let eq = Globnames.destIndRef Coqlib.glob_eq in
-    (* Do not force the lazy if they are not defined *)
-    let eq, ctx = with_context_set ctx 
-      (Universes.fresh_inductive_instance (Global.env ()) eq) in
-      mkIndU eq, mkConstructUi (eq,1), ctx
-  with Not_found ->
-    error "eq not found."
 
 (**********************************************************************)
 (* Check if an inductive type [ind] has the form                      *)
@@ -219,7 +210,7 @@ let build_sym_involutive_scheme env ind =
   let (ind,u as indu), ctx = Universes.fresh_inductive_instance env ind in
   let (mib,mip as specif),nrealargs,realsign,paramsctxt,paramsctxt1 =
     get_sym_eq_data env indu in
-  let eq,eqrefl,ctx = get_coq_eq ctx in
+  let eqd = (Coqlib.find_equality env None).eq_data in
   let sym, ctx = const_of_scheme sym_scheme_kind env ind ctx in
   let cstr n = mkApp (mkConstructUi (indu,1),extended_rel_vect n paramsctxt) in
   let varH = fresh env (default_id_of_sort (snd (mind_arity mip))) in
@@ -238,7 +229,7 @@ let build_sym_involutive_scheme env ind =
       (mkCase (ci,
 	       my_it_mkLambda_or_LetIn_name
 	       (lift_rel_context (nrealargs+1) realsign_ind)
-	       (mkApp (eq,[|
+	       (mkApp (eqd.eq,[|
 	       mkApp
 	       (mkIndU indu, Array.concat
 	       [extended_rel_vect (3*nrealargs+2) paramsctxt1;
@@ -255,7 +246,7 @@ let build_sym_involutive_scheme env ind =
 		 [|mkRel 1|]])|]]);
 	       mkRel 1|])),
 	       mkRel 1 (* varH *),
-	       [|mkApp(eqrefl,[|applied_ind_C;cstr (nrealargs+1)|])|]))))
+	       [|mkApp(eqd.refl,[|applied_ind_C;cstr (nrealargs+1)|])|]))))
   in c, Evd.evar_universe_context_of ctx
 
 let sym_involutive_scheme_kind =
@@ -328,8 +319,9 @@ let build_l2r_rew_scheme dep env ind kind =
   let (mib,mip as specif),nrealargs,realsign,paramsctxt,paramsctxt1 =
     get_sym_eq_data env indu in
   let sym, ctx = const_of_scheme sym_scheme_kind env ind ctx in
-  let sym_involutive, ctx = const_of_scheme sym_involutive_scheme_kind env ind ctx in
-  let eq,eqrefl,ctx = get_coq_eq ctx in
+  let sym_involutive, ctx =
+    const_of_scheme sym_involutive_scheme_kind env ind ctx in
+  let eqd = (Coqlib.find_equality env None).eq_data in
   let cstr n p =
     mkApp (mkConstructUi(indu,1),
       Array.concat [extended_rel_vect n paramsctxt1;
@@ -367,7 +359,8 @@ let build_l2r_rew_scheme dep env ind kind =
   let ctx = Univ.union_universe_context_set ctx ctx' in
   let s = mkSort s in
   let ci = make_case_info (Global.env()) ind RegularStyle in
-  let cieq = make_case_info (Global.env()) (fst (destInd eq)) RegularStyle in
+  let cieq =
+    make_case_info (Global.env()) (fst (destInd eqd.eq)) RegularStyle in
   let applied_PC =
     mkApp (mkVar varP,Array.append (extended_rel_vect 1 realsign)
            (if dep then [|cstr (2*nrealargs+1) 1|] else [||])) in
@@ -403,7 +396,7 @@ let build_l2r_rew_scheme dep env ind kind =
      mkCase (cieq,
        mkLambda (Name varH,lift 3 applied_ind,
          mkLambda (Anonymous,
-                   mkApp (eq,[|lift 4 applied_ind;applied_sym_sym;mkRel 1|]),
+                   mkApp (eqd.eq,[|lift 4 applied_ind;applied_sym_sym;mkRel 1|]),
                    applied_PR)),
        mkApp (sym_involutive,
          Array.append (extended_rel_vect 3 mip.mind_arity_ctxt) [|mkVar varH|]),
@@ -721,7 +714,7 @@ let rew_r2l_scheme_kind =
 
 (* TODO: extend it to types with more than one index *)
 
-let build_congr env (eq,refl,ctx) ind =
+let build_congr env (eqd,ctx) ind =
   let (ind,u as indu), ctx = with_context_set ctx 
     (Universes.fresh_inductive_instance env ind) in
   let (mib,mip) = lookup_mind_specif env ind in
@@ -768,17 +761,19 @@ let build_congr env (eq,refl,ctx) ind =
 	        extended_rel_list (2*mip.mind_nrealargs_ctxt+3)
 		  paramsctxt
 	        @ extended_rel_list 0 realsign),
-            mkApp (eq,
+            mkApp (eqd.eq_data.eq,
 	      [|mkVar varB;
                 mkApp (mkVar varf, [|lift (2*mip.mind_nrealargs_ctxt+4) b|]);
 		mkApp (mkVar varf, [|mkRel (mip.mind_nrealargs - i + 2)|])|]))),
        mkVar varH,
-       [|mkApp (refl,
+       [|mkApp (eqd.eq_data.refl,
           [|mkVar varB;
 	    mkApp (mkVar varf, [|lift (mip.mind_nrealargs+3) b|])|])|]))))))
   in c, Evd.evar_universe_context_of ctx
 
 let congr_scheme_kind = declare_individual_scheme_object "_congr"
   (fun ind ->
+    let env = Global.env() in
+    let ctx = Univ.empty_universe_context_set in
     (* May fail if equality is not defined *)
-    build_congr (Global.env()) (get_coq_eq Univ.empty_universe_context_set) ind)
+    build_congr env (Coqlib.find_equality env None,ctx) ind)

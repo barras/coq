@@ -224,7 +224,7 @@ let ineq1_of_constr (h,t) =
 			   hstrict=false}]
                 |_->assert false)
           | Ind ((kn,i),_) ->
-	      if IndRef(kn,i) = Coqlib.glob_eq then
+	      if IndRef(kn,i) = Coqlib.Std.glob_eq then
 		           let t0= args.(0) in
                            let t1= args.(1) in
                            let t2= args.(2) in
@@ -284,10 +284,8 @@ let constant = Coqlib.gen_constant "Fourier"
 
 (* Standard library *)
 open Coqlib
-let coq_sym_eqT = lazy (build_coq_eq_sym ())
-let coq_False = lazy (build_coq_False ())
-let coq_not = lazy (build_coq_not ())
-let coq_eq = lazy (build_coq_eq ())
+let eqd = lazy (find_equality (Global.env()) None)
+let log = lazy ((Lazy.force eqd).eq_logic)
 
 (* Rdefinitions *)
 let constant_real = constant ["Reals";"Rdefinitions"]
@@ -586,7 +584,7 @@ let rec fourier gl=
            in
            tac:=(tclTHENS (my_cut ineq)
                      [tclTHEN (change_in_concl None
-			       (mkAppL [| get coq_not; ineq|]
+			       (mkAppL [| (get log).log_not; ineq|]
 				       ))
 		      (tclTHEN (apply (if sres then get coq_Rnot_lt_lt
 					       else get coq_Rnot_le_le))
@@ -605,13 +603,13 @@ let rec fourier gl=
       			        [tclORELSE
                                    (* TODO : Ring.polynom []*) tclIDTAC
                                    tclIDTAC;
-					  (tclTHEN (apply (get coq_sym_eqT))
+					  (tclTHEN (apply ((get eqd).eq_data.sym))
 						(apply (get coq_Rinv_1)))]
 
 					 )
 				]));
                        !tac1]);
-	   tac:=(tclTHENS (cut (get coq_False))
+	   tac:=(tclTHENS (cut ((get log).log_False))
 				  [tclTHEN intro (contradiction None);
 				   !tac])
       |_-> assert false) |_-> assert false

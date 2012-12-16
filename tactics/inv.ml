@@ -26,6 +26,7 @@ open Elim
 open Equality
 open Misctypes
 open Tacexpr
+open Coqlib
 
 let collect_meta_variables c =
   let rec collrec acc c = match kind_of_term c with
@@ -118,8 +119,8 @@ let make_inv_predicate env evd indf realargs id status concl =
   (* Now, we can recurse down this list, for each ai,(mkRel k) whether to
      push <Ai>(mkRel k)=ai (when   Ai is closed).
    In any case, we carry along the rest of pairs *)
-  let eqdata = Evarutil.evd_comb1 (Evd.with_context_set Evd.univ_flexible)
-    evd (Coqlib.build_coq_eq_data_in env) in
+  let eqd = Evarutil.evd_comb1 (Evd.with_context_set Evd.univ_flexible)
+    evd (Coqlib.find_equality_in env None) in
   let rec build_concl eqns n = function
     | [] -> (it_mkProd concl eqns,n)
     | (ai,(xi,ti))::restlist ->
@@ -129,15 +130,14 @@ let make_inv_predicate env evd indf realargs id status concl =
           else
 	    make_iterated_tuple env' !evd ai (xi,ti)
 	in
-        let eq_term = eqdata.Coqlib.eq in
-        let eqn = applist (eq_term ,[eqnty;lhs;rhs]) in
+        let eqn = mkApp(eqd.eq_data.eq ,[|eqnty;lhs;rhs|]) in
 	build_concl ((Anonymous,lift n eqn)::eqns) (n+1) restlist
   in
   let (newconcl,neqns) = build_concl [] 0 pairs in
   let predicate = it_mkLambda_or_LetIn_name env newconcl hyps in
   (* OK - this predicate should now be usable by res_elimination_then to
      do elimination on the conclusion. *)
-  (predicate,neqns)
+  (eqd,predicate,neqns)
 
 (* The result of the elimination is a bunch of goals like:
 
@@ -296,13 +296,18 @@ let remember_first_eq id x = if !x == MoveLast then x := MoveAfter id
    If it can discriminate then the goal is proved, if not tries to use it as
    a rewrite rule. It erases the clause which is given as input *)
 
-let projectAndApply thin id eqname names depids gls =
+let projectAndApply eqd thin id eqname names depids gls =
   let subst_hyp l2r id =
     tclTHEN (tclTRY(rewriteInConcl l2r (mkVar id)))
       (if thin then clear [id] else (remember_first_eq id eqname; tclIDTAC))
   in
   let substHypIfVariable tac id gls =
-    let (t,t1,t2) = Hipattern.dest_nf_eq gls (pf_get_hyp_typ gls id) in
+    let (t,t1,t2) =
+      match destApp (pf_get_hyp_typ gls id) with
+	| (_,[|t;t1;t2|]) -> (t,t1,t2)
+	| _ -> anomaly "projectAndApply: not an well-formed equation" in
+    let t1 = pf_whd_betadeltaiota gls t1 in
+    let t2 = pf_whd_betadeltaiota gls t2 in
     match (kind_of_term t1, kind_of_term t2) with
     | Var id1, _ -> generalizeRewriteIntros (subst_hyp true id) depids id1 gls
     | _, Var id2 -> generalizeRewriteIntros (subst_hyp false id) depids id2 gls
@@ -331,7 +336,7 @@ let projectAndApply thin id eqname names depids gls =
 
 (* Inversion qui n'introduit pas les hypotheses, afin de pouvoir les nommer
    soi-meme (proposition de Valerie). *)
-let rewrite_equations_gene othin neqns ba gl =
+let rewrite_equations_gene eqd othin neqns ba gl =
   let (depids,nodepids) = split_dep_and_nodep ba.assums gl in
   let rewrite_eqns =
     match othin with
@@ -344,7 +349,7 @@ let rewrite_equations_gene othin neqns ba gl =
                         (onLastHypId
                            (fun id ->
                               tclTRY
-			        (projectAndApply thin id (ref MoveLast)
+			        (projectAndApply eqd thin id (ref MoveLast)
 				  [] depids))));
                  onHyps (compose List.rev (afterHyp last)) bring_hyps;
                  onHyps (afterHyp last)
@@ -396,7 +401,7 @@ let extract_eqn_names = function
   | None -> None,[]
   | Some x -> x
 
-let rewrite_equations othin neqns names ba gl =
+let rewrite_equations eqd othin neqns names ba gl =
   let names = List.map (get_names true) names in
   let (depids,nodepids) = split_dep_and_nodep ba.assums gl in
   let rewrite_eqns =
@@ -411,7 +416,7 @@ let rewrite_equations othin neqns names ba gl =
                (tclTHEN
 		 (intro_move idopt MoveLast)
 		 (onLastHypId (fun id ->
-		   tclTRY (projectAndApply thin id first_eq names depids)))))
+		   tclTRY (projectAndApply eqd thin id first_eq names depids)))))
 	       names;
 	     tclMAP (fun (id,_,_) gl ->
 	       intro_move None (if thin then MoveLast else !first_eq) gl)
@@ -431,11 +436,11 @@ let interp_inversion_kind = function
   | FullInversion -> Some false
   | FullInversionClear -> Some true
 
-let rewrite_equations_tac (gene, othin) id neqns names ba =
+let rewrite_equations_tac eqd (gene, othin) id neqns names ba =
   let othin = interp_inversion_kind othin in
   let tac =
-    if gene then rewrite_equations_gene othin neqns ba
-    else rewrite_equations othin neqns names ba in
+    if gene then rewrite_equations_gene eqd othin neqns ba
+    else rewrite_equations eqd othin neqns names ba in
   match othin with
   | Some true (* if Inversion_clear, clear the hypothesis *) ->
     tclTHEN tac (tclTRY (clear [id]))
@@ -456,7 +461,7 @@ let raw_inversion inv_kind id status names gl =
   check_no_metas indclause ccl;
   let IndType (indf,realargs) = find_rectype env sigma ccl in
   let evd = ref sigma in
-  let (elim_predicate,neqns) =
+  let (eqd,elim_predicate,neqns) =
     make_inv_predicate env evd indf realargs id status (pf_concl gl) in
   let (cut_concl,case_tac) =
     if status != NoDep && (dependent c (pf_concl gl)) then
@@ -469,7 +474,7 @@ let raw_inversion inv_kind id status names gl =
     (tclTHEN (Refiner.tclEVARS !evd) (tclTHENS
      (assert_tac Anonymous cut_concl)
      [case_tac names
-       (introCaseAssumsThen (rewrite_equations_tac inv_kind id neqns))
+       (introCaseAssumsThen (rewrite_equations_tac eqd inv_kind id neqns))
        (Some elim_predicate) ([],[]) ind indclause;
       onLastHypId
         (fun id ->

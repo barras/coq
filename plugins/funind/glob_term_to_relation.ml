@@ -906,7 +906,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 			assert false
 		end
 	    | GApp(loc1,GRef(loc2,eq_as_ref,_),[ty;GVar(loc3,id);rt])
-		when  eq_as_ref = Lazy.force Coqlib.coq_eq_ref  && n = Anonymous
+		when  eq_as_ref = Lazy.force Coqlib.Std.coq_eq_ref  && n = Anonymous
 		  ->
 		begin
 		  try
@@ -1022,7 +1022,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 		     else new_b, Idset.add id id_to_exclude
 		  *)
 	    | GApp(loc1,GRef(loc2,eq_as_ref,_),[ty;rt1;rt2])
-		when  eq_as_ref = Lazy.force Coqlib.coq_eq_ref  && n = Anonymous
+		when  eq_as_ref = Lazy.force Coqlib.Std.coq_eq_ref  && n = Anonymous
 		  ->
 	      begin
 		try 

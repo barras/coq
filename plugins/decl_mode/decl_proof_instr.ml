@@ -30,6 +30,7 @@ open Namegen
 open Reductionops
 open Goptions
 open Misctypes
+open Coqlib
 
 (* Strictness option *)
 
@@ -488,7 +489,8 @@ let instr_cut mkstat _thus _then cut gls0 =
 
 
 (* iterated equality *)
-let _eq = lazy (Universes.constr_of_global (Coqlib.glob_eq))
+let _eq =
+  lazy (find_equality(Global.env())None).eq_data.eq
 
 let decompose_eq id gls =
   let typ = pf_get_hyp_typ gls id in

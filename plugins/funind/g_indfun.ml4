@@ -303,7 +303,7 @@ let rec hdMatchSub inu (test: constr -> bool) : fapp_info list =
     ::subres
 
 let mkEq typ c1 c2 =
-  mkApp (Coqlib.build_coq_eq(),[| typ; c1; c2|])
+  mkApp ((Coqlib.Std.coq_eq_equality()).Coqlib.eq_data.Coqlib.eq,[| typ; c1; c2|])
 
 
 let poseq_unsafe idunsafe cstr gl =

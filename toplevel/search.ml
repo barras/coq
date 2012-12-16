@@ -20,6 +20,7 @@ open Printer
 open Libnames
 open Globnames
 open Nametab
+open Coqlib
 
 type filter_function = global_reference -> env -> constr -> bool
 type display_function = global_reference -> env -> constr -> unit
@@ -128,10 +129,6 @@ let filter_by_module (module_list:dir_path list) (accept:bool)
     in
     xor accept (filter_aux module_list)
 
-let ref_eq = Globnames.encode_mind Coqlib.logic_module (id_of_string "eq"), 0
-let c_eq = mkInd ref_eq
-let gref_eq = IndRef ref_eq
-
 let mk_rewrite_pattern1 eq pattern =
   PApp (PRef eq, [| PMeta None; pattern; PMeta None |])
 
@@ -167,6 +164,10 @@ let raw_pattern_search extra_filter display_function pat =
     display_function name
 
 let raw_search_rewrite extra_filter display_function pattern =
+  let gref_eq =
+    try global_of_constr (Coqlib.find_equality (Global.env()) None).eq_data.eq
+    with Not_found -> error "Default equality is not a global reference"
+ in
   filtered_search
     (fun s a c ->
        ((pattern_filter (mk_rewrite_pattern1 gref_eq pattern) s a c) ||
@@ -203,6 +204,7 @@ let text_pattern_search extra_filter pat =
 
 let text_search_rewrite extra_filter pat =
   let ans = ref [] in
+  let c_eq = (Coqlib.find_equality (Global.env()) None).eq_data.eq in
   raw_search (Libtypes.search_eq_concl c_eq) extra_filter (plain_display ans) pat;
   format_display !ans
 

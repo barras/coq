@@ -374,6 +374,20 @@ let new_type_evar ?src ?filter rigid evd env =
   let evd', e = new_evar evd' env ?src ?filter (mkSort s) in
     evd', (e, s)
 
+let evar_instance_of_context evd hyps ctxt =
+  let evinst = Array.of_list
+    (List.map (fun (id,_,_) -> mkVar id) (named_context_of_val hyps)) in
+  let push (na,bd,ty) (evd,subst,inst) =
+    match bd with
+	Some b -> (evd,substl subst b::subst, inst)
+      | None ->
+	let (evd',ev) = new_pure_evar evd hyps (substl subst ty) in
+	let ev = mkEvar(ev,evinst) in
+	(evd',ev::subst, ev::inst) in
+  let (evd,subst,inst) =
+    Sign.fold_rel_context push ctxt ~init:(evd,[],[]) in
+  (evd, Array.of_list(List.rev inst), subst)
+
   (* The same using side-effect *)
 let e_new_evar evdref env ?(src=(Loc.ghost,Evar_kinds.InternalHole)) ?filter ?candidates ty =
   let (evd',ev) = new_evar !evdref env ~src:src ?filter ?candidates ty in

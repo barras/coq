@@ -38,6 +38,7 @@ open Genredexpr
 open Equality
 open Auto
 open Eauto
+open Coqlib
 
 open Indfun_common
 
@@ -1176,8 +1177,9 @@ let get_current_subgoals_types () =
   List.map (Goal.V82.abstract_type sigma) sgs
 
 let build_and_l l =
-  let and_constr =  Coqlib.build_coq_and () in
-  let conj_constr = coq_conj () in
+  let logic = Coqlib.find_logic (Global.env()) None in
+  let and_constr =  logic.log_and in
+  let conj_constr = logic.log_andI in
   let mk_and p1 p2 =
     Term.mkApp(and_constr,[|p1;p2|]) in
   let rec is_well_founded t = 
@@ -1201,7 +1203,7 @@ let build_and_l l =
 	let c,tac,nb = f pl in
 	mk_and p1 c,
 	tclTHENS
-	  (apply (constr_of_global conj_constr))
+	  (apply conj_constr)
 	  [tclIDTAC;
 	   tac
 	  ],nb+1

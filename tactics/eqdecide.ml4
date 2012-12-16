@@ -74,22 +74,22 @@ let solveNoteqBranch side =
 
 (* Constructs the type {c1=c2}+{~c1=c2} *)
 
-let mkDecideEqGoal eqonleft op rectype c1 c2 g =
-  let equality    = mkApp(build_coq_eq(), [|rectype; c1; c2|]) in
-  let disequality = mkApp(build_coq_not (), [|equality|]) in
+let mkDecideEqGoal eqd eqonleft op rectype c1 c2 g =
+  let equality    = mkApp(eqd.eq_data.eq, [|rectype; c1; c2|]) in
+  let disequality = mkApp(eqd.eq_logic.log_not, [|equality|]) in
   if eqonleft then mkApp(op, [|equality; disequality |])
   else mkApp(op, [|disequality; equality |])
 
 
 (* Constructs the type (x1,x2:R){x1=x2}+{~x1=x2} *)
 
-let mkGenDecideEqGoal rectype g =
+let mkGenDecideEqGoal eqd rectype g =
   let hypnames = pf_ids_of_hyps g in
   let xname    = next_ident_away (id_of_string "x") hypnames
   and yname    = next_ident_away (id_of_string "y") hypnames in
   (mkNamedProd xname rectype
      (mkNamedProd yname rectype
-        (mkDecideEqGoal true (build_coq_sumbool ())
+        (mkDecideEqGoal eqd true (build_coq_sumbool ())
           rectype (mkVar xname) (mkVar yname) g)))
 
 let eqCase tac =
@@ -109,15 +109,15 @@ let diseqCase eqonleft =
   (tclTHEN  (Extratactics.injHyp absurd)
             (full_trivial [])))))))
 
-let solveArg eqonleft op a1 a2 tac g =
+let solveArg eqd eqonleft op a1 a2 tac g =
   let rectype = pf_type_of g a1 in
-  let decide  = mkDecideEqGoal eqonleft op rectype a1 a2 g in
+  let decide  = mkDecideEqGoal eqd eqonleft op rectype a1 a2 g in
   let subtacs =
     if eqonleft then [eqCase tac;diseqCase eqonleft;default_auto]
     else [diseqCase eqonleft;eqCase tac;default_auto] in
   (tclTHENS (h_elim_type decide) subtacs) g
 
-let solveEqBranch rectype g =
+let solveEqBranch eqd rectype g =
   try
     let (eqonleft,op,lhs,rhs,_) = match_eqdec (pf_concl g) in
     let (mib,mip) = Global.lookup_inductive rectype in
@@ -126,7 +126,7 @@ let solveEqBranch rectype g =
     let rargs   = getargs rhs
     and largs   = getargs lhs in
     List.fold_right2
-      (solveArg eqonleft op) largs rargs
+      (solveArg eqd eqonleft op) largs rargs
       (tclTHEN (choose_eq eqonleft) h_reflexivity) g
   with PatternMatchingFailure -> error "Unexpected conclusion!"
 
@@ -136,7 +136,7 @@ let hd_app c = match kind_of_term c with
   | App (h,_) -> h
   | _ -> c
 
-let decideGralEquality g =
+let decideGralEquality eqd g =
   try
     let eqonleft,_,c1,c2,typ = match_eqdec (pf_concl g) in
     let headtyp = hd_app (pf_compute g typ) in
@@ -147,28 +147,34 @@ let decideGralEquality g =
     in
     (tclTHEN
       (mkBranches c1 c2)
-      (tclORELSE (solveNoteqBranch eqonleft) (solveEqBranch rectype)))
+      (tclORELSE (solveNoteqBranch eqonleft) (solveEqBranch eqd rectype)))
     g
   with PatternMatchingFailure ->
     error "The goal must be of the form {x<>y}+{x=y} or {x=y}+{x<>y}."
 
-let decideEqualityGoal = tclTHEN intros decideGralEquality
+let decideEquality eqd rectype g =
+  let decide  = mkGenDecideEqGoal eqd rectype g in
+  (tclTHENS (cut decide)
+     [default_auto;tclTHEN intros (decideGralEquality eqd)]) g
 
-let decideEquality rectype g =
-  let decide  = mkGenDecideEqGoal rectype g in
-  (tclTHENS (cut decide) [default_auto;decideEqualityGoal]) g
+(* Tactic decide equality *)
 
+let decideEqualityGoal g =
+  let eqd = Coqlib.find_equality (pf_env g) None in
+  tclTHEN intros (decideGralEquality eqd) g
 
-(* The tactic Compare *)
+(* Tactic compare *)
 
 let compare c1 c2 g =
   let rectype = pf_type_of g c1 in
-  let decide  = mkDecideEqGoal true (build_coq_sumbool ()) rectype c1 c2 g in
+  let eqd = Coqlib.find_equality (pf_env g) None in
+  let decide  =
+    mkDecideEqGoal eqd true (build_coq_sumbool ()) rectype c1 c2 g in
   (tclTHENS (cut decide)
             [(tclTHEN  intro
              (tclTHEN (onLastHyp simplest_case)
                        clear_last));
-             decideEquality (pf_type_of g c1)]) g
+             decideEquality eqd (pf_type_of g c1)]) g
 
 
 (* User syntax *)

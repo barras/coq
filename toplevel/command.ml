@@ -677,7 +677,7 @@ let fix_sub_ref = make_ref fixsub_module "Fix_sub"
 let measure_on_R_ref = make_ref fixsub_module "MR"
 let well_founded = init_constant ["Init"; "Wf"] "well_founded"
 let mkSubset name typ prop =
-  mkApp ((delayed_force build_sigma).typ,
+  mkApp ((delayed_force Std.build_sigma).typ,
 	 [| typ; mkLambda (name, typ, prop) |])
 let sigT = Lazy.lazy_from_fun build_sigma_type
 
@@ -764,7 +764,7 @@ let build_wellfounded (recname,n,bl,arityc,body) r measure notation =
   in
   let intern_bl = wfarg 1 :: [arg] in
   let _intern_env = push_rel_context intern_bl env in
-  let proj = (delayed_force build_sigma).Coqlib.proj1 in
+  let proj = (delayed_force Std.build_sigma).Coqlib.proj1 in
   let wfargpred = mkLambda (Name argid', argtyp, wf_rel_fun (mkRel 1) (mkRel 3)) in
   let projection = (* in wfarg :: arg :: before *)
     mkApp (proj, [| argtyp ; wfargpred ; mkRel 1 |])
@@ -777,7 +777,7 @@ let build_wellfounded (recname,n,bl,arityc,body) r measure notation =
   let intern_fun_binder = (Name (add_suffix recname "'"), None, intern_fun_arity_prod) in
   let curry_fun =
     let wfpred = mkLambda (Name argid', argtyp, wf_rel_fun (mkRel 1) (mkRel (2 * len + 4))) in
-    let arg = mkApp ((delayed_force build_sigma).intro, [| argtyp; wfpred; lift 1 make; mkRel 1 |]) in
+    let arg = mkApp ((delayed_force Std.build_sigma).intro, [| argtyp; wfpred; lift 1 make; mkRel 1 |]) in
     let app = mkApp (mkRel (2 * len + 2 (* recproof + orig binders + current binders *)), [| arg |]) in
     let rcurry = mkApp (rel, [| measure; lift len measure |]) in
     let lam = (Name (id_of_string "recproof"), None, rcurry) in

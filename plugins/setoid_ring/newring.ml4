@@ -17,6 +17,7 @@ open Closure
 open Environ
 open Libnames
 open Globnames
+open Coqlib
 open Glob_term
 open Tacticals
 open Tacexpr
@@ -1018,9 +1019,10 @@ let ftheory_to_obj : field_info -> obj =
       classify_function = (fun x -> Substitute x) }
 
 let field_equality r inv req =
+  let eqd = find_equality (Global.env()) None in
   match kind_of_term req with
-    | App (f, [| _ |]) when eq_constr_nounivs f (Lazy.force coq_eq) ->
-        mkApp((Coqlib.build_coq_eq_data()).congr,[|r;r;inv|])
+    | App (f, [| _ |]) when eq_constr_nounivs f eqd.eq_data.eq ->
+        mkApp(eqd.eq_data.congr,[|r;r;inv|])
     | _ ->
 	let _setoid = setoid_of_relation (Global.env ()) r req in
 	let signature = [Some (r,Some req)],Some(r,Some req) in
