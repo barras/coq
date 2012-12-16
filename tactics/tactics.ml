@@ -3428,7 +3428,7 @@ let prove_symmetry hdcncl eq_kind =
     | MonomorphicLeibnizEq (c1,c2) -> mkApp(hdcncl,[|c2;c1|])
     | PolymorphicLeibnizEq (typ,c1,c2) -> mkApp(hdcncl,[|typ;c2;c1|])
     | HeterogenousEq (t1,c1,t2,c2) -> mkApp(hdcncl,[|t2;c2;t1;c1|])
-    | OtherInductiveEquality ->
+    | OtherInductiveEquality _ ->
       error "Cannot handle this inductive equality type" in
   tclTHENFIRST (cut symc)
     (tclTHENLIST
@@ -3465,7 +3465,7 @@ let symmetry_in id gl =
       | MonomorphicLeibnizEq (c1,c2) -> mkApp (hdcncl, [| c2; c1 |])
       | PolymorphicLeibnizEq (typ,c1,c2) -> mkApp (hdcncl, [| typ; c2; c1 |])
       | HeterogenousEq (t1,c1,t2,c2) -> mkApp (hdcncl, [| t2; c2; t1; c1 |])
-      | OtherInductiveEquality ->
+      | OtherInductiveEquality _ ->
 	error "Cannot handle this inductive equality type" in
     tclTHENS (cut (it_mkProd_or_LetIn symccl sign))
       [ intro_replacing id;
@@ -3506,7 +3506,7 @@ let prove_transitivity hdcncl eq_kind t gl =
       let typt = pf_type_of gl t in
       (mkApp(hdcncl, [| typ1; c1; typt ;t |]),
        mkApp(hdcncl, [| typt; t; typ2; c2 |]))
-    | OtherInductiveEquality ->
+    | OtherInductiveEquality _ ->
       error "Cannot handle this inductive equality type" in
   tclTHENFIRST (cut eq2)
     (tclTHENFIRST (cut eq1)

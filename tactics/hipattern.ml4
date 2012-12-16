@@ -232,7 +232,7 @@ type equation_kind =
   | MonomorphicLeibnizEq of constr * constr
   | PolymorphicLeibnizEq of constr * constr * constr
   | HeterogenousEq of constr * constr * constr * constr
-  | OtherInductiveEquality
+  | OtherInductiveEquality of constr array
 
 exception NoEquationFound
 
@@ -242,21 +242,34 @@ let coq_refl_jm_pattern       = PATTERN [ forall A:_, forall x:A, _ A x A x ]
 
 open Globnames
 
+(* An inductive is an equality if it has only one constructor
+   with no arguments, and the inductive has at least an index.
+   True is *not* an equality.
+*)
+let is_equality_mind ind (mib,mip) =
+  let nconstr = Array.length mip.mind_consnames in
+  Int.equal nconstr 1 &&
+    mip.mind_nrealargs > 0 &&
+    Int.equal (constructor_nrealargs (Global.env()) (ind,1)) 0
+
+let is_inductive_equality ind =
+  let specif = Global.lookup_inductive ind in
+  is_equality_mind ind specif
+
 let match_with_equation t =
-  let (hdapp,args) = if isApp t then destApp t else (t,[||]) in
+  let (hdapp,args) = if isApp t then destApp t else raise NoEquationFound in
   try
     if Array.length args <> 3 then raise Not_found;
     (Some (Coqlib.find_equality (Global.env()) (Some hdapp)), hdapp,
      PolymorphicLeibnizEq(args.(0),args.(1),args.(2)))
   with Not_found ->
     (match kind_of_term hdapp with
-      | Ind ind ->
-(*TODO: restore jmeq
+      | Ind (ind,_u) ->
 	if eq_gr (IndRef ind) Std.glob_jmeq then
-	  Some (Std.build_coq_jmeq_data()),hdapp,
+	  Some (Std.build_coq_jmeq_full()),hdapp,
 	  HeterogenousEq(args.(0),args.(1),args.(2),args.(3))
-	else*)
-          let (mib,mip) = Global.lookup_inductive (fst ind) in
+	else
+          let (mib,mip) = Global.lookup_inductive ind in
           let constr_types = mip.mind_nf_lc in
           let nconstr = Array.length mip.mind_consnames in
 	  if Int.equal nconstr 1 then
@@ -266,16 +279,12 @@ let match_with_equation t =
 	      None, hdapp, PolymorphicLeibnizEq(args.(0),args.(1),args.(2))
 	    else if is_matching coq_refl_jm_pattern constr_types.(0) then
 	      None, hdapp, HeterogenousEq(args.(0),args.(1),args.(2),args.(3))
-	    else if Int.equal (constructor_nrealargs (Global.env()) (fst ind,1)) 0 then
-	      None, hdapp, OtherInductiveEquality
+	    else if is_equality_mind ind (mib,mip) then
+	      None, hdapp, OtherInductiveEquality args
 	    else raise NoEquationFound
             else raise NoEquationFound
       | _ -> raise NoEquationFound)
 
-let is_inductive_equality ind =
-  let (mib,mip) = Global.lookup_inductive ind in
-  let nconstr = Array.length mip.mind_consnames in
-  Int.equal nconstr 1 && Int.equal (constructor_nrealargs (Global.env()) (ind,1)) 0
 
 let match_with_equality_type t =
   let (hdapp,args) = decompose_app t in
@@ -385,7 +394,7 @@ let extract_eq_args gl = function
   | HeterogenousEq (t1,e1,t2,e2) ->
       if Tacmach.pf_conv_x gl t1 t2 then (t1,e1,e2)
       else raise PatternMatchingFailure
-  | OtherInductiveEquality ->
+  | OtherInductiveEquality _ ->
     raise PatternMatchingFailure (* what could we do ? *)
 
 let find_eq_data_decompose gl eqn =

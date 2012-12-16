@@ -145,9 +145,9 @@ Qed.
 
 Lemma inj2_nat n : id2 (S (S n)) (S n) -> identity n (S n).
 intros.
-injection H.
+injection X.
 intro.
-elim H0 using id2E. (* rewrite would not work here *)
+elim X0 using id2E. (* rewrite would not work here *)
 Show Proof.
 admit.
 Qed.

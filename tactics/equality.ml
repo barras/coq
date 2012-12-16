@@ -234,12 +234,16 @@ let register_is_applied_rewrite_relation = (:=) is_applied_rewrite_relation
 (* find_elim determines which elimination principle is necessary to
    eliminate lbeq on sort_of_gl. *)
 
-let find_elim hdcncl lft2rgt dep cls args gl =
+let find_elim (_,hdcncl) lft2rgt dep cls args gl =
   let inccl = Option.is_empty cls in
-  if (eq_constr_nounivs hdcncl (Universes.constr_of_global (Coqlib.Std.glob_eq)) ||
-      eq_constr_nounivs hdcncl (Universes.constr_of_global (Coqlib.Std.glob_jmeq)) &&
-      pf_conv_x gl (List.nth args 0) (List.nth args 2)) && not dep
-    || Flags.version_less_or_equal Flags.V8_2
+  let old_style =
+    try
+      (eq_constr_nounivs hdcncl (Universes.constr_of_global (Coqlib.Std.glob_eq)) ||
+	 eq_constr_nounivs hdcncl (Universes.constr_of_global (Coqlib.Std.glob_jmeq)) &&
+	 pf_conv_x gl (List.nth args 0) (List.nth args 2)) && not dep
+      || Flags.version_less_or_equal Flags.V8_2
+    with Not_found -> false in
+  if old_style
   then
     match kind_of_term hdcncl with 
       | Ind (ind_sp,u) -> 
@@ -289,10 +293,12 @@ let type_of_clause gl = function
   | Some id -> pf_get_hyp_typ gl id
 
 let leibniz_rewrite_ebindings_clause cls lft2rgt tac sigma c t l with_evars frzevars dep_proof_ok gl hdcncl =
-  let isatomic = isProd (whd_zeta hdcncl) in
+  let isatomic = isProd (whd_zeta (snd hdcncl)) in
   let dep_fun = if isatomic then dependent else dependent_no_evar in
   let dep = dep_proof_ok && dep_fun c (type_of_clause gl cls) in
-  let elim = find_elim hdcncl lft2rgt dep cls (snd (decompose_app t)) gl in
+  let elim =
+    try find_elim hdcncl lft2rgt dep cls (snd (decompose_app t)) gl
+    with Not_found -> error "" in
   let tac elim gl =
     general_elim_clause with_evars frzevars tac cls (project gl) c t l
       (match lft2rgt with None -> false | Some b -> b)
@@ -301,7 +307,7 @@ let leibniz_rewrite_ebindings_clause cls lft2rgt tac sigma c t l with_evars frze
 
 let adjust_rewriting_direction args lft2rgt =
   match args with
-  | [_] ->
+  | OtherInductiveEquality [|_|] ->
     (* equality to a constant, like in eq_true *)
     (* more natural to see -> as the rewriting to the constant *)
     if not lft2rgt then
@@ -324,25 +330,26 @@ let general_rewrite_ebindings_clause cls lft2rgt occs frzevars dep_proof_ok ?tac
     let sigma = project gl in
     let ctype = get_type_of env sigma c in
     let rels, t = decompose_prod_assum (whd_betaiotazeta sigma ctype) in
-      match match_with_equality_type t with
-      | Some (hdcncl,args) -> (* Fast path: direct leibniz-like rewrite *)
+    try
+      match match_with_equation t with
+      | oeqd, hdeq, args -> (* Fast path: direct leibniz-like rewrite *)
 	  let lft2rgt = adjust_rewriting_direction args lft2rgt in
           leibniz_rewrite_ebindings_clause cls lft2rgt tac sigma c (it_mkProd_or_LetIn t rels)
-	    l with_evars frzevars dep_proof_ok gl hdcncl
-      | None ->
-	  try
-	    rewrite_side_tac (!general_rewrite_clause cls
-				 lft2rgt occs (c,l) ~new_goals:[]) tac gl
-	  with e -> (* Try to see if there's an equality hidden *)
-	    let env' = push_rel_context rels env in
-	    let rels',t' = splay_prod_assum env' sigma t in (* Search for underlying eq *)
-	      match match_with_equality_type t' with
-	      | Some (hdcncl,args) ->
-		  let lft2rgt = adjust_rewriting_direction args lft2rgt in
-		    leibniz_rewrite_ebindings_clause cls lft2rgt tac sigma c
-		      (it_mkProd_or_LetIn t' (rels' @ rels)) l with_evars frzevars dep_proof_ok gl hdcncl
-	      | None -> raise e
-		  (* error "The provided term does not end with an equality or a declared rewrite relation." *)
+	    l with_evars frzevars dep_proof_ok gl (oeqd,hdeq)
+    with Not_found|NoEquationFound ->
+      try
+	rewrite_side_tac (!general_rewrite_clause cls
+			     lft2rgt occs (c,l) ~new_goals:[]) tac gl
+      with e -> (* Try to see if there's an equality hidden *)
+	let env' = push_rel_context rels env in
+	let rels',t' = splay_prod_assum env' sigma t in (* Search for underlying eq *)
+	match match_with_equality_type t' with
+	  | Some (hdcncl,args) ->
+	    let lft2rgt = adjust_rewriting_direction (OtherInductiveEquality(Array.of_list args)) lft2rgt in
+	    leibniz_rewrite_ebindings_clause cls lft2rgt tac sigma c
+	      (it_mkProd_or_LetIn t' (rels' @ rels)) l with_evars frzevars dep_proof_ok gl (None,hdcncl)
+	  | None -> raise e
+     (* error "The provided term does not end with an equality or a declared rewrite relation." *)
 
 let general_rewrite_ebindings =
   general_rewrite_ebindings_clause None
@@ -1199,7 +1206,7 @@ let swap_equality_args = function
   | MonomorphicLeibnizEq (e1,e2) -> [e2;e1]
   | PolymorphicLeibnizEq (t,e1,e2) -> [t;e2;e1]
   | HeterogenousEq (t1,e1,t2,e2) -> [t2;e2;t1;e1]
-  | OtherInductiveEquality ->
+  | OtherInductiveEquality _ ->
     error "Cannot handle this inductive equality type"
 
 let swap_equands gls eqn =
@@ -1217,7 +1224,7 @@ let swapEquandsInConcl gls =
 
 let bareRevSubstInConcl lbeq body (t,e1,e2) gls =
   (* find substitution scheme *)
-  let eq_elim = find_elim lbeq.eq_data.eq (Some false) false None [e1;e2] gls in
+  let eq_elim = find_elim (Some lbeq, lbeq.eq_data.eq) (Some false) false None [e1;e2] gls in
   (* build substitution predicate *)
   let p = lambda_create (pf_env gls) (t,body) in
   (* apply substitution scheme *)
