@@ -117,7 +117,7 @@ Ltac cring_gen :=
         end
   end.
 
-Ltac cring_compute:= vm_compute; reflexivity.
+Ltac cring_compute:= vm_compute; first[reflexivity|exact I].
 
 Ltac cring:= 
   intros;
