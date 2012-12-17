@@ -73,8 +73,6 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
     get_constructors (push_rel (Anonymous,None,typP) env')
       (lift_inductive_family 1 indf) in
   let nc = Array.length constrs in
-  (* in the context of parameters, P and branches *)
-  let pconstrs = Array.map (lift_path_constructor nc) pconstrs in
 
   (* in env: params, P, previous branches (k) *)
   let rec add_branch env k =
