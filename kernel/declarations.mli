@@ -170,6 +170,7 @@ type one_inductive_body = {
     (not used in the kernel) 0- and 1- constructors*)
 
     mind_recargs : wf_paths; (** Signature of recursive arguments in the constructors *)
+    mind_precargs : wf_paths; (** Signature of recursive arguments in the path constructors *)
 
 (** {8 Datas for bytecode compilation } *)
 

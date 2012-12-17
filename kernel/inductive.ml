@@ -402,13 +402,25 @@ let build_path_branch_type ind (mib,mip) params p dep =
     let par' = Array.map (lift (1+nz)) params in
     let (dargs,inst,lhs,rhs) = map_pathcons (lift 1) (dargs,inst,lhs,rhs) in
     (* Computes the lhs or rhs where constructors are replaced by 0-branches and
-       recursive variables by calls to h *)
+       recursive variables by calls to h (k is the number of binders crossed) *)
+    let precargs = (dest_subterms mip.mind_precargs).(i-1) in
+    let npra = List.length precargs in
+    let is_recarg n = (* n is a dB *)
+      if 0<n && n <= npra then
+	match dest_recarg (List.nth precargs (npra-n)) with
+	    Mrec _ -> true
+	  | _ -> Pp.msg_warning(Pp.str"Not a 1-constructor recarg"); false
+      else (Pp.msg_warning(Pp.str"Bad dB. Now crash"); false) in
     let rec make_hs k t args =
       match kind_of_term t with
 	| Construct(cind,j) when eq_ind cind ind && j<=nc ->
 	  let rargs = Array.sub args (Array.length params) (Array.length args-Array.length params) in
-	  beta_appvect (lift (nz+1) br.(j-1)) rargs
-      (*      | Rel i when i = -> ()*)
+	  beta_appvect (lift (k+nz+1) br.(j-1)) rargs
+        | Rel i when is_recarg (i-k) ->
+	  Pp.msg_warning(Pp.str"Found a recarg. Good.");
+	  assert (Array.length inst = 0); (* TODO: compute the instance of cstr arg i with args... *)
+	  let ainst = [||] in
+	  mkApp(mkApp(mkRel(k+nz+1), ainst),[|mkApp(t,args)|]) (* h args *)
 	| App(u,args') -> make_hs k u (Array.append args' args)
 	| _ -> assert false in
     (* Generate the conclusion of the branch: transport lhs using the 1-constructor *)
@@ -658,11 +670,13 @@ let rec subterm_specif renv stack t =
 	  let stack' = push_stack_closures renv l stack in
           let cases_spec = branches_specif renv 
 	    (lazy_subterm_specif renv [] c) ci in
+	  let (br,pbr) = Array.chop (Array.length cases_spec) lbr in
+	  (* Is it safe not to look at path constructor branches ? *)
           let stl  =
             Array.mapi (fun i br' ->
 			  let stack_br = push_stack_args (cases_spec.(i)) stack' in
 			    subterm_specif renv stack_br br')
-              lbr in
+              br in
             subterm_spec_glb stl
 
       | Fix ((recindxs,i),(_,typarray,bodies as recdef)) ->
@@ -805,9 +819,14 @@ let check_one_fix renv recpos def =
             let case_spec = branches_specif renv 
 	      (lazy_subterm_specif renv [] c_0) ci in
 	    let stack' = push_stack_closures renv l stack in
-              Array.iteri (fun k br' -> 
-			     let stack_br = push_stack_args case_spec.(k) stack' in
-			     check_rec_call renv stack_br br') lrest
+	    let (br,pbr) = Array.chop (Array.length case_spec) lrest in
+	    (* Check recursive calls in 0-constructors as usual *)
+            Array.iteri (fun k br' -> 
+	      let stack_br = push_stack_args case_spec.(k) stack' in
+	      check_rec_call renv stack_br br') br;
+	    (* For path constructors, no size information is provided
+               for constructor arguments *)
+	    Array.iter (check_rec_call renv []) pbr
 
         (* Enables to traverse Fixpoint definitions in a more intelligent
            way, ie, the rule :
@@ -1026,12 +1045,17 @@ let check_one_cofix env nbfix def deftype =
 	    else
 	      raise (CoFixGuardError (env,UnguardedRecursiveCall c))
 
-	| Case (_,p,tm,vrest) ->
+	| Case (ci,p,tm,vrest) ->
             if (noccur_with_meta n nbfix p) then
               if (noccur_with_meta n nbfix tm) then
-		if (List.for_all (noccur_with_meta n nbfix) args) then
-		  Array.iter (check_rec_call env alreadygrd n vlra) vrest
-		else
+		if (List.for_all (noccur_with_meta n nbfix) args) then begin
+		  let (br,pbr) = Array.chop (Array.length ci.ci_cstr_ndecls) vrest in
+		  Array.iter (check_rec_call env alreadygrd n vlra) br;
+		  (* We do not allow recursive calls in path constructors... *)
+		  if not (Array.for_all (noccur_with_meta n nbfix) pbr) then
+		    (* oops not the right error message... *)
+		    raise (CoFixGuardError (env,RecCallInCaseFun c))
+		end else
 		  raise (CoFixGuardError (env,RecCallInCaseFun c))
               else
 		raise (CoFixGuardError (env,RecCallInCaseArg c))

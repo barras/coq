@@ -289,6 +289,9 @@ type one_inductive_body = {
  (* Signature of recursive arguments in the constructors *)
     mind_recargs : wf_paths;
 
+ (** Signature of recursive arguments in the path constructors *)
+    mind_precargs : wf_paths;
+
 (* Datas for bytecode compilation *)
 
  (* number of constant constructor *)
@@ -361,6 +364,7 @@ let subst_mind_packet sub mbp =
     mind_nrealargs_ctxt = mbp.mind_nrealargs_ctxt;
     mind_kelim = mbp.mind_kelim;
     mind_recargs = subst_wf_paths sub mbp.mind_recargs (*wf_paths*);
+    mind_precargs = subst_wf_paths sub mbp.mind_precargs (*wf_paths*);
     mind_nb_constant = mbp.mind_nb_constant;
     mind_nb_args = mbp.mind_nb_args;
     mind_reloc_tbl = mbp.mind_reloc_tbl }

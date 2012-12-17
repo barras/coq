@@ -608,7 +608,7 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs (lcnam
     (* Here we drop the parameters from the instance field *)
     if !Flags.debug then Pp.msgerrnl(Pp.str "Drop params:");
     let inst = check_correct_par ienv' hyps (ntypes - i) pc.c1_inst in
-    let check_path_end ui =
+    let check_path_end ui = (* TODO: accept eq_rel ? *)
       if not (noccur_between n ntypes ui) then
 	failwith_non_pos_list n ntypes [ui];
       () in
@@ -658,7 +658,7 @@ let check_positivity kn env_ar_par params inds =
   let irecargs = Array.map (fun (ind,(_,ra,_)) -> ra) ind_chkd in
   let iprecargs = Array.map (fun (ind,(_,_,ra)) -> ra) ind_chkd in
   let nmr' = array_min nmr (Array.map (fun (_,(nmr',_,_)) -> nmr') ind_chkd) in
-  (inds,nmr',Rtree.mk_rec irecargs, Rtree.mk_rec iprecargs)
+  (inds,nmr',(Rtree.mk_rec irecargs, Rtree.mk_rec iprecargs))
 
 
 (************************************************************************)
@@ -706,14 +706,14 @@ let used_section_variables env inds =
       Idset.empty inds in
   keep_hyps env ids
 
-let build_inductive env env_ar params isrecord isfinite inds nmr recargs cst =
+let build_inductive env env_ar params isrecord isfinite inds nmr (recargs,precargs) cst =
   let ntypes = Array.length inds in
   (* Compute the set of used section variables *)
   let hyps =  used_section_variables env inds in
   let nparamargs = rel_context_nhyps params in
   let nparamdecls = rel_context_length params in
   (* Check one inductive *)
-  let build_one_packet (id,cnames,lc,lpc,(ar_sign,ar_kind)) recarg =
+  let build_one_packet (id,cnames,lc,lpc,(ar_sign,ar_kind)) recarg precarg =
     (* Type of constructors in normal form *)
     let splayed_lc = Array.map (dest_prod_assum env_ar) lc in
     let nf_lc = Array.map (fun (d,b) -> it_mkProd_or_LetIn b d) splayed_lc in
@@ -764,11 +764,12 @@ let build_inductive env env_ar params isrecord isfinite inds nmr recargs cst =
 	mind_pathcons = lpc;
 	mind_nf_lc = nf_lc;
 	mind_recargs = recarg;
+	mind_precargs = precarg;
 	mind_nb_constant = !nconst;
 	mind_nb_args = !nblock;
 	mind_reloc_tbl = rtbl;
       } in
-  let packets = Array.map2 build_one_packet inds recargs in
+  let packets = Array.map3 build_one_packet inds recargs precargs in
   let is_hit = Array.exists(fun mip -> Array.length mip.mind_pathcons > 0)packets in
   if is_hit then begin
     if Array.length packets > 1 then
@@ -795,7 +796,7 @@ let check_inductive env kn mie =
   (* First type-check the inductive definition *)
   let (env_ar, params, inds, cst) = typecheck_inductive env mie in
   (* Then check positivity conditions *)
-  let (inds,nmr,recargs,precargs) = check_positivity kn env_ar params inds in
+  let (inds,nmr,recargs) = check_positivity kn env_ar params inds in
   (* Build the inductive packets *)
     build_inductive env env_ar params mie.mind_entry_record mie.mind_entry_finite
       inds nmr recargs cst

@@ -75,19 +75,19 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
   let nc = Array.length constrs in
   (* in the context of parameters, P and branches *)
   let pconstrs = Array.map (lift_path_constructor nc) pconstrs in
-  let br = Termops.rel_vect 0 nc in
 
   (* in env: params, P, previous branches (k) *)
   let rec add_branch env k =
-    if k < Array.length constrs then
+    if k < nc then
       let cs = constrs.(k) in
-      let t = lift k (build_branch_type env dep (mkRel 1) cs) in
+      let t = build_branch_type env dep (mkRel (1+k)) (lift_point_constructor k cs) in
       mkLambda_string "f" t
 	(add_branch (push_rel (Anonymous, None, t) env) (k+1))
     else if k < nc + Array.length pconstrs then
       let k' = k-nc in
       let cs = pconstrs.(k') in
-      let t = lift k' (build_path_branch_type env dep (mkRel (nc+1)) cs br) in
+      let br = Termops.rel_vect k' nc in
+      let t = build_path_branch_type env dep (mkRel (1+k)) (lift_path_constructor k cs) br in
       mkLambda_string "g" t
 	(add_branch (push_rel (Anonymous, None, t) env) (k+1))
     else
@@ -450,15 +450,22 @@ let mis_make_indrec env sigma listdepkind mib =
     (* Body on make_one_rec *)
     let (indi,mibi,mipi,dep,kind) = List.nth listdepkind p in
 
+    let gen_rec_scheme =
       if (mis_is_recursive_subset
-	(List.map (fun (indi,_,_,_,_) -> snd indi) listdepkind)
-	mipi.mind_recargs)
-      then
-	let env' = push_rel_context lnamesparrec env in
-	  it_mkLambda_or_LetIn_name env (put_arity env' 0 listdepkind)
-	    lnamesparrec
-      else
-	mis_make_case_com dep env sigma indi (mibi,mipi) kind
+	    (List.map (fun (indi,_,_,_,_) -> snd indi) listdepkind)
+	    mipi.mind_recargs) then
+	if Array.length mipi.mind_pathcons <> 0 then begin
+	  msg_warning(str"HIT: no recursive scheme yet. Generate case scheme only");
+	  false
+	end
+	else true
+      else false in
+    if gen_rec_scheme then
+      let env' = push_rel_context lnamesparrec env in
+      it_mkLambda_or_LetIn_name env (put_arity env' 0 listdepkind)
+	lnamesparrec
+    else
+      mis_make_case_com dep env sigma indi (mibi,mipi) kind
   in
     (* Body of mis_make_indrec *)
     List.tabulate make_one_rec nrec
