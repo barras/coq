@@ -125,14 +125,16 @@ type inductive_arity =
     these terms and contexts are understood in the context containing
     - variables for the inductive types (as for point constructors)
     - variables for the point constructors
-    args are not supposed (yet?) to refer to pont constructors.
+    args are not supposed (yet?) to refer to point constructors.
 *)
+type path_end = constr
 type path_constructor = {
   c1_name : identifier;
   c1_args : rel_context;
+  c1_args_info : (rel_context * constr array) option array;
   c1_inst : constr array; (* includes non-uniform parameters (FIX) *)
-  c1_lhs : constr;
-  c1_rhs : constr
+  c1_lhs : path_end;
+  c1_rhs : path_end
 }
 
 type one_inductive_body = {

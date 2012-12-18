@@ -8,8 +8,8 @@ with paths :=
 Print circle.
 
 Axiom magic:forall T,T.
-Eval compute in (fun P f => circle_rect P f (fun h => magic _) base). (* Array.map3 *)
-Eval compute in (fun P f c => circle_rect P f (fun h => magic _) c). (* Array.map3 *)
+Eval compute in (fun P f => circle_rect P f (fun h => magic _) base).
+Eval compute in (fun P f c => circle_rect P f (fun h => magic _) c).
 
 
 Lemma L : base=base.
@@ -36,11 +36,27 @@ Inductive isInhab0 (X:Type) : Type :=
     | proj0 : X -> isInhab0 X
 with paths :=
     | contr0 (y y' : isInhab0 X) (x x':X) : (proj0 x) = (proj0 x').
-
-Inductive isInhab (X:Type) : Type :=
-    | proj : X -> isInhab X
+(*
+Inductive isInhab1 (X:Type) : Type :=
+    | proj1 (x: X): isInhab1 X
 with paths :=
-    | contr (y y' : nat->isInhab X) (n:nat) : (y n)=(y' 1).
+    | contr1 (y y' : nat->isInhab1 X) (n:nat) : (y n)=(y' 1).
+Print isInhab1_rect.
+*)
+
+(* bug with let-in args in 1-constructors ... *)
+(*Unset Elimination Schemes.*)
+Inductive isInhab1 (X:Type) : Type :=
+    | proj1 (x: X): isInhab1 X
+with paths :=
+    | contr1 (n:nat)(m:=0)(y y' : nat->isInhab1 X) (a:=0)(b:=0) : (y n)=(y' 1).
+Print isInhab1_rect. (* buggy eta expansion of branches *)
+Notation "e @ x" := (eq_rect _ _ x _ e) (at level 60, right associativity).
+
+Inductive isInhab (X:Type)(f:X->X) : X->X->Type :=
+    | proj (x: X): isInhab X f x x
+with paths :=
+    | contr  (n:nat)(x x':X) (y y' : nat->isInhab X f (f x') x) : (y n)=(y' 1).
 Print isInhab_rect.
 
 Inductive Z2Z :=
@@ -48,13 +64,13 @@ Inductive Z2Z :=
 | su (_:Z2Z)
 with paths :=
 | mod : ze = (su (su ze)).
-Notation "e @ x" := (eq_rect _ _ x _ e) (at level 60, right associativity).
 Check Z2Z_rect.
 (*
  forall (P : Z2Z -> Type) (f : P ze) (f0 : forall z : Z2Z, P (su z)),
        ((forall H : Z2Z, P H) -> mod @ f = f0 (su ze)) ->
        forall z : Z2Z, P z
 *)
+(*
 Check (fun (P:Z2Z->Type)
    (f:P ze)
    (f':forall z, P z -> P (su z))
@@ -62,6 +78,7 @@ Check (fun (P:Z2Z->Type)
   fix Zrec (z:Z2Z) :=
     Z2Z_rect P f (fun z' => f' z' (Zrec z')) (fun _ => g Zrec) z
 ).
+*)
 
 Inductive circlep (A:Type): nat->U :=
   basep : circlep A 0
@@ -86,7 +103,7 @@ intros.
 unfold dmap.
 generalize (g (circlep_rect A P f f0 f1 g) n x c).
 generalize (loopp A n x c).
-destruct (loopp A n x c).
+(*destruct (loopp A n x c).
 
 
 
@@ -109,19 +126,17 @@ Fixpoint circlep_recu (n : nat) (c : circlep A n) : P n c :=
     g
     n c.
 
-
+*)
 (* TODO: non-unif params anomaly *)
 (*Inductive circle0 (n:nat): U :=
   base0 : circle0 0
-with paths := loop0 : base0=base0.
+with paths := loop0 : base0=base0. 
 *)
 
 
 Inductive circle1 (n:nat) : nat->U :=
   base1 m : circle1 n m
-with paths := loop1_ m : (base1 m ) = (base1 m). (* Evar! *)
-
-(* why rejected ??? *)
+with paths := loop1_ m : (base1 m ) = (base1 m).
 
 Inductive circle2 (n:nat) : nat->U :=
   base2 m : circle2 n m

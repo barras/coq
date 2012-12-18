@@ -73,7 +73,18 @@ val build_path_branches_type :
 val build_path_branch_type :
   inductive -> mutual_inductive_body * one_inductive_body ->
   constr array -> constr -> bool -> constr array ->
-  (int * rel_context * constr array * constr * constr -> types)
+  (int * rel_context * (rel_context * constr array) option array *
+  constr array * constr * constr -> types)
+
+(** Applying a relocation or substution operation on the data
+    of a path constructor, respecting the binding structure *)
+val map_pathcons :
+  (constr -> constr) ->
+  rel_context * (rel_context * constr array) option array *
+    constr array * constr * constr ->
+  rel_context * (rel_context * constr array) option array *
+    constr array * constr * constr
+
 
 (** Return the arity of an inductive type *)
 val mind_arity : one_inductive_body -> rel_context * sorts_family

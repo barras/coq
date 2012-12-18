@@ -34,6 +34,20 @@ match i as i0 return (P i0) with
 end
 *)
 
+Lemma Interval_connected (x:Interval): x=right.
+eapply Interval_rect with (i:=x).
+Show Existentials.
+instantiate (1:=eq_refl).
+instantiate (1:=segment).
+intros _.
+unfold eq_rect.
+Scheme eq_indd := Induction for eq Sort Prop.
+exact (eq_indd _ left (fun z (e:left=z) =>
+  match e in _=y return y=z with eq_refl => e end = @eq_refl _ z) eq_refl right segment).
+Defined.
+
+
+
 Inductive Circle : Type :=
     | base : Circle
 with paths :=

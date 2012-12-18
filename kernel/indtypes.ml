@@ -197,11 +197,7 @@ let infer_path_constructor_packet env_ar_par env_ar_par_cstr npar ncstr indpos p
 	     ^string_of_id cn^" have incompatible indices.")   in
   (* Beware that here, and unlike in the stored data, parameters are included
      in the instance... *)
-  let pc = {c1_name = cn;
-	    c1_args = pcargs;
-	    c1_inst = b1;
-	    c1_lhs = u1.uj_val;
-	    c1_rhs = u2.uj_val } in
+  let pc = (cn,pcargs,b1,u1.uj_val,u2.uj_val) in
   (pc, constraint_list_union (cst1::cst2::cst'::Array.to_list cstb))
 
 
@@ -497,7 +493,7 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs (lcnam
   let lparams = rel_context_length hyps in
   let nmr = rel_context_nhyps hyps in
   (* Checking the (strict) positivity of a constructor argument type [c] *)
-  let rec check_pos (env, n, ntypes, ra_env as ienv) nmr c =
+  let rec check_pos (env, n, ntypes, ra_env as ienv) nmr ctxt c =
     let x,largs = decompose_app (whd_betadeltaiota env c) in
       match kind_of_term x with
 	| Prod (na,b,d) ->
@@ -505,27 +501,38 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs (lcnam
             (match weaker_noccur_between env n ntypes b with
 		None -> failwith_non_pos_list n ntypes [b]
               | Some b ->
-	          check_pos (ienv_push_var ienv (na, b, mk_norec)) nmr d)
+	          check_pos (ienv_push_var ienv (na, b, mk_norec)) nmr
+		    ((na,None,b)::ctxt) d)
 	| Rel k ->
-            (try let (ra,rarg) = List.nth ra_env (k-1) in
-	    let nmr1 =
-	      (match ra with
-                  Mrec _ -> compute_rec_par ienv hyps nmr largs
-		|  _ -> nmr)
-	    in
-	      if not (List.for_all (noccur_between n ntypes) largs)
-	      then failwith_non_pos_list n ntypes largs
-	      else (nmr1,rarg)
-              with Failure _ | Invalid_argument _ -> (nmr,mk_norec))
+          (try let (ra,rarg) = List.nth ra_env (k-1) in
+	       let (nmr1,recarity) =
+		 (match ra with
+                     Mrec _ ->
+		       (* Note: prameters are kept (we don't know yet
+			  how many will be uniform) *)
+		       (compute_rec_par ienv hyps nmr largs,
+			Some(ctxt,Array.of_list largs))
+		   |  _ -> (nmr,None))
+	       in
+	       if not (List.for_all (noccur_between n ntypes) largs)
+	       then failwith_non_pos_list n ntypes largs
+	       else ((nmr1,rarg),recarity)
+           with Failure _ | Invalid_argument _ -> ((nmr,mk_norec),None))
 	| Ind ind_kn ->
             (* If the inductive type being defined appears in a
                parameter, then we have a nested indtype *)
-            if List.for_all (noccur_between n ntypes) largs then (nmr,mk_norec)
-            else check_positive_nested ienv nmr (ind_kn, largs)
+            if List.for_all (noccur_between n ntypes) largs then
+	      ((nmr,mk_norec),None)
+            else begin
+	      (* hit: we do not keep the info for nested *)
+	      Pp.msg_warning
+		(Pp.str"HIT: nested inductive recursive term ignored");
+	      (check_positive_nested ienv nmr (ind_kn, largs), None)
+	    end
 	| err ->
 	    if noccur_between n ntypes x &&
               List.for_all (noccur_between n ntypes) largs
-	    then (nmr,mk_norec)
+	    then ((nmr,mk_norec),None)
 	    else failwith_non_pos_list n ntypes (x::largs)
 
   (* accesses to the environment are not factorised, but is it worth? *)
@@ -576,7 +583,7 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs (lcnam
 
           | Prod (na,b,d) ->
 	      let () = assert (List.is_empty largs) in
-              let nmr',recarg = check_pos ienv nmr b in
+              let (nmr',recarg),_ = check_pos ienv nmr empty_rel_context b in
               let ienv' = ienv_push_var ienv (na,b,mk_norec) in
                 check_constr_rec ienv' nmr' (recarg::lrec) d
           | hd ->
@@ -595,28 +602,52 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs (lcnam
             (nmr, List.rev lrec)
     in check_constr_rec ienv nmr [] c in
 
-  let check_path_constructors ienv nmr pc =
-    let check_path_arg (na,bd,ty) (ienv,nmr,lrec) =
+  let check_path_constructors ienv nmr (pc_name,pc_args,pc_inst,pc_lhs,pc_rhs) =
+    (* Check that 1-constructor argument declaration d is positive given
+       an (i)env, [nmr] the current # of uniform parameters, [lreca] the
+       infos (arity,instance) of previous arguments (including let-ins), and
+       [lrec] the recursive paths (skipping let-ins) of the prev args. *)
+    let check_path_arg (na,bd,ty as d) (_,n,ntypes,_ as ienv,nmr,lreca,lrec) =
       match bd with
-	| Some _ -> error "TODO: let in path constructor..." (*TODO should be straightforward*)
-	| None ->
+	| Some bd ->
+	  (* Maybe a bit too restrictive. It should be enough to check that
+             the reduced form (i.e. substituting bd in the next arguments)
+             but it looks saner like this... *)
+	  if not (List.for_all (noccur_between n ntypes) [bd;ty]) then
+	    error("let-in argument of a 1-constructor is not positive!");
+	  (ienv_push_decl d ienv, nmr, None::lreca, lrec) (* record the let ? *)
+       | None ->
 	  if !Flags.debug then Pp.msgerrnl(Pp.str "Check pos");
-	  let nmr',recarg = check_pos ienv nmr ty in
-	  (ienv_push_var ienv (na,ty,mk_norec), nmr', recarg::lrec) in
-    let ((_,n,ntypes,_ as ienv'),nmr,rev_lrec) =
-      Sign.fold_rel_context check_path_arg pc.c1_args ~init:(ienv,nmr,[]) in
+	  let (nmr',recarg),recarity = check_pos ienv nmr empty_rel_context ty in
+	  (ienv_push_decl d ienv, nmr', recarity::lreca, recarg::lrec) in
+    let ((_,n,ntypes,_ as ienv'),nmr,rev_lrecarity,rev_lrec) =
+      Sign.fold_rel_context check_path_arg pc_args ~init:(ienv,nmr,[],[]) in
+    (* Relocate infos in the same context that the instance *)
+    let rev_lrecarity =
+      List.map_i (fun i oinfo ->
+	Option.map (fun (ctxt,ainst) ->
+	  (lift_rel_context i ctxt,
+	   Array.map (liftn i (rel_context_length ctxt+1)) ainst)) oinfo)
+	1 rev_lrecarity in
     (* Here we drop the parameters from the instance field *)
     if !Flags.debug then Pp.msgerrnl(Pp.str "Drop params:");
-    let inst = check_correct_par ienv' hyps (ntypes - i) pc.c1_inst in
-    let check_path_end ui = (* TODO: accept eq_rel ? *)
+    let inst = check_correct_par ienv' hyps (ntypes - i) pc_inst in
+    (* TODO: build a structured info about the constructor... *)
+    let check_path_end ui =
       if not (noccur_between n ntypes ui) then
 	failwith_non_pos_list n ntypes [ui];
       () in
     if !Flags.debug then Pp.msgerrnl(Pp.str "Check lhs...");
-    let _ = check_path_end pc.c1_lhs in
+    let _ = check_path_end pc_lhs in
     if !Flags.debug then Pp.msgerrnl(Pp.str "Check rhs...");
-    let _ = check_path_end pc.c1_rhs in
-    (({pc with c1_inst=inst}, List.rev rev_lrec),nmr)in
+    let _ = check_path_end pc_rhs in
+    (({c1_name=pc_name;
+       c1_args=pc_args;
+       c1_args_info=Array.of_list(List.rev rev_lrecarity);
+       c1_inst=inst;
+       c1_lhs=pc_lhs;
+       c1_rhs=pc_rhs },
+      List.rev rev_lrec),nmr) in
 
   let raw_cstr =
     Array.map (fun c -> snd (mind_extract_params lparams c)) indlc in

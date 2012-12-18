@@ -236,12 +236,14 @@ type inductive_arity =
 | Monomorphic of monomorphic_inductive_arity
 | Polymorphic of polymorphic_arity
 
+type path_end = constr
 type path_constructor = {
   c1_name : identifier;
   c1_args : rel_context;
+  c1_args_info : (rel_context * constr array) option array;
   c1_inst : constr array;
-  c1_lhs : constr;
-  c1_rhs : constr
+  c1_lhs : path_end;
+  c1_rhs : path_end
 }
 
 type one_inductive_body = {
@@ -345,6 +347,11 @@ let subst_indarity sub = function
 let subst_pathcons sub pc = {
   c1_name = pc.c1_name;
   c1_args = map_rel_context (subst_mps sub) pc.c1_args;
+  c1_args_info =
+    Array.map (Option.map
+		 (fun (ctxt,inst) ->
+		   (map_rel_context (subst_mps sub) ctxt,
+		    Array.smartmap (subst_mps sub) inst))) pc.c1_args_info;
   c1_inst = Array.smartmap (subst_mps sub) pc.c1_inst;
   c1_lhs = subst_mps sub pc.c1_lhs;
   c1_rhs = subst_mps sub pc.c1_rhs

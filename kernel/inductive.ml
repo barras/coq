@@ -368,16 +368,28 @@ let build_branches_type ind (_,mip as specif) params p =
   Array.mapi build_one_branch mip.mind_nf_lc
 
 
-let map_pathcons f (args,inst,lhs,rhs) =
+let map_pathcons f (args,argsi,inst,lhs,rhs) =
+  let mkv v = mkApp(mkProp,v) in
+  let dv c = if isApp c then snd(destApp c) else [||] in
    let pcbundle =
-     it_mkProd_or_LetIn(mkApp(mkProp,[|mkApp(mkProp,inst);lhs;rhs|])) args in
+     let infos =
+       Array.map
+	 (function None -> mkSet
+	   | Some(ctxt,ainst) -> it_mkProd_or_LetIn(mkv ainst)ctxt)
+	 argsi in
+     it_mkProd_or_LetIn(mkv[|mkv infos;mkv inst;lhs;rhs|]) args in
    let rpcbundle = f pcbundle in
    let (args, dcl) = decompose_prod_assum rpcbundle in
-   let (_,v) = destApp dcl in
-   let inst = if Array.length inst = 0 then [||] else snd (destApp v.(0)) in
-   let lhs = v.(1) in
-   let rhs = v.(2) in
-   (args,inst,lhs,rhs)
+   let v = dv dcl in
+   let argsi = Array.map
+     (fun cl ->
+       if is_Set cl then None else	
+	 let (ctxt,ainst) = decompose_prod_assum cl in
+	 Some(ctxt,dv ainst)) (dv v.(0)) in
+   let inst = dv v.(1) in
+   let lhs = v.(2) in
+   let rhs = v.(3) in
+   (args,argsi,inst,lhs,rhs)
 
 let build_path_branch_type ind (mib,mip) params p dep =
   (* number of 0-constructors (= number of branches in the context...) *)
@@ -395,32 +407,54 @@ let build_path_branch_type ind (mib,mip) params p dep =
 	(na,arsign) in
     it_mkProd_or_LetIn
       (beta_appvect(lift na' p) (Sign.args_of_rel_context 0 pargs)) pargs in
-  fun br (i,dargs,inst,lhs,rhs) ->
+  fun br (i,dargs,dargsi,inst,lhs,rhs) ->
     assert (Array.length br = nc);
     let cstr = mkConstruct(ind,i+nc) in
     let nz = rel_context_length dargs in
     let par' = Array.map (lift (1+nz)) params in
-    let (dargs,inst,lhs,rhs) = map_pathcons (lift 1) (dargs,inst,lhs,rhs) in
+    let (dargs,dargsi,inst,lhs,rhs) = map_pathcons (lift 1) (dargs,dargsi,inst,lhs,rhs) in
+    (* Compute which arguments of the 1-constructor are recursive subterms...
+       This info should be pre-computed... *)
+(*    let precargs = 
+      let do_decl (na,bd,ty) (bl,lrec) =
+	match bd, lrec with
+	    Some _, _::lrec' -> false::bl, lrec'
+	  | None, Mrec _::lrec' -> true::bl, lrec'
+	  | None, _::lrec' -> false::bl, lrec'
+	  | _ -> assert false
+      in
+      let lrec = List.rev (Array.to_list (dest_subterms mip.mind_precargs).(i-1) ) in
+      let (rbl,rlrec) =
+	Sign_fold_rel_context do_decl dargs ~init:([],Array.to_list precargs) in
+      assert (List.length rlrec = 0);
+      assert (List.length rbl = nz);
+      Array.of_list (List.rev rbl) in*)
     (* Computes the lhs or rhs where constructors are replaced by 0-branches and
        recursive variables by calls to h (k is the number of binders crossed) *)
-    let precargs = (dest_subterms mip.mind_precargs).(i-1) in
-    let npra = List.length precargs in
-    let is_recarg n = (* n is a dB *)
-      if 0<n && n <= npra then
-	match dest_recarg (List.nth precargs (npra-n)) with
-	    Mrec _ -> true
-	  | _ -> Pp.msg_warning(Pp.str"Not a 1-constructor recarg"); false
-      else (Pp.msg_warning(Pp.str"Bad dB. Now crash"); false) in
+    let not_recarg posn =
+      let mask = String.make nz '.' in
+      for i = 0 to nz-1 do if dargsi.(i)<>None then mask.[i] <- '#' done;
+      Pp.msg_warning(Pp.str("Not a 1-constructor recarg (pos="^string_of_int posn^",mask="^mask^
+			       "). Will now crash."));
+      assert false in
     let rec make_hs k t args =
       match kind_of_term t with
 	| Construct(cind,j) when eq_ind cind ind && j<=nc ->
 	  let rargs = Array.sub args (Array.length params) (Array.length args-Array.length params) in
 	  beta_appvect (lift (k+nz+1) br.(j-1)) rargs
-        | Rel i when is_recarg (i-k) ->
-	  Pp.msg_warning(Pp.str"Found a recarg. Good.");
-	  assert (Array.length inst = 0); (* TODO: compute the instance of cstr arg i with args... *)
-	  let ainst = [||] in
-	  mkApp(mkApp(mkRel(k+nz+1), ainst),[|mkApp(t,args)|]) (* h args *)
+        | Rel i when k<i && i<=k+nz ->
+	  let posn = k+nz-i in
+	  (match dargsi.(posn) with
+	      Some(ctxt,arginst) ->
+		Pp.msg_warning(Pp.str"Found a recarg. Good.");
+		let arginst =
+		  Array.sub arginst (Array.length params)
+		    (Array.length arginst-Array.length params) in
+		assert (Array.length inst = Array.length arginst);
+		let s = Sign.subst_of_rel_context_args ctxt args in
+		let ainst = Array.map (substl s) arginst in
+		mkApp(mkApp(mkRel(k+nz+1), ainst),[|mkApp(t,args)|]) (* h args *)
+	    | None -> not_recarg posn)
 	| App(u,args') -> make_hs k u (Array.append args' args)
 	| _ -> assert false in
     (* Generate the conclusion of the branch: transport lhs using the 1-constructor *)
@@ -455,9 +489,9 @@ let build_path_branches_type ind (mib,mip as specif) params p =
       ind_subst (fst ind) mib in
   let instantiate i pc =
     (* instantiate d with parameters (in the context of the branch conclusion) *)
-    let (dargs,inst,lhs,rhs) =
-      map_pathcons (substl ipc_subst) (pc.c1_args,pc.c1_inst,pc.c1_lhs,pc.c1_rhs) in
-    (i,dargs,inst,lhs,rhs) in
+    let (dargs,dargsi,inst,lhs,rhs) =
+      map_pathcons (substl ipc_subst) (pc.c1_args,pc.c1_args_info,pc.c1_inst,pc.c1_lhs,pc.c1_rhs) in
+    (i,dargs,dargsi,inst,lhs,rhs) in
   let mk_type = build_path_branch_type ind specif params p true in
   fun br ->
     Array.mapi (fun i pc -> mk_type br (instantiate (i+1) pc)) mip.mind_pathcons

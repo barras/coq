@@ -107,6 +107,7 @@ type path_constructor_summary = {
   cs1_params : constr list;  (* parameters of the constructor in current ctx *)
   cs1_nargs : int;           (* length of arguments signature (letin included) *)
   cs1_args : rel_context;    (* signature of the arguments (letin included) *)
+  cs1_args_info : (rel_context * constr array) option array;
   cs1_inst : constr array;   (* instance of the equation *)
   cs1_lhs : constr;          (* lhs of path *)
   cs1_rhs : constr;          (* rhs of path *)

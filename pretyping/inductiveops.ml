@@ -214,6 +214,7 @@ type path_constructor_summary = {
   cs1_params : constr list;  (* parameters of the constructor in current ctx *)
   cs1_nargs : int;           (* length of arguments signature (letin included) *)
   cs1_args : rel_context;    (* signature of the arguments (letin included) *)
+  cs1_args_info : (rel_context * constr array) option array;
   cs1_inst : constr array;   (* instance of the equation *)
   cs1_lhs : constr;          (* lhs of path *)
   cs1_rhs : constr;          (* rhs of path *)
@@ -229,15 +230,18 @@ let lift_point_constructor n cs = {
   cs0_args = lift_rel_context n cs.cs0_args;
   cs0_concl_realargs = Array.map (liftn n (cs.cs0_nargs+1)) cs.cs0_concl_realargs
 }
-let lift_path_constructor n cs = {
-  cs1_cstr = cs.cs1_cstr;
-  cs1_params = List.map (lift n) cs.cs1_params;
-  cs1_nargs = cs.cs1_nargs;
-  cs1_args = lift_rel_context n cs.cs1_args;
-  cs1_inst = Array.map (liftn n (cs.cs1_nargs+1)) cs.cs1_inst;
-  cs1_lhs = liftn n (cs.cs1_nargs+1) cs.cs1_lhs;
-  cs1_rhs = liftn n (cs.cs1_nargs+1) cs.cs1_rhs
-}
+let lift_path_constructor n cs =
+  let (args,argsi,inst,lhs,rhs) =
+    Inductive.map_pathcons (lift n)
+      (cs.cs1_args,cs.cs1_args_info,cs.cs1_inst,cs.cs1_lhs,cs.cs1_rhs) in
+  { cs1_cstr = cs.cs1_cstr;
+    cs1_params = List.map (lift n) cs.cs1_params;
+    cs1_nargs = cs.cs1_nargs;
+    cs1_args = args;
+    cs1_args_info = argsi;
+    cs1_inst = inst;
+    cs1_lhs = lhs;
+    cs1_rhs = rhs }
 
 (* Accept less parameters than in the signature *)
 
@@ -292,18 +296,14 @@ let get_path_constructor (ind,mib,mip,params) =
     assert (j <= Array.length mip.mind_pathcons);
     let j' = j+Array.length mip.mind_consnames in
     let pc =  mip.mind_pathcons.(j-1) in
-    let pcbundle =
-      it_mkProd_or_LetIn (mkApp(mkProp,[|mkApp(mkProp,pc.c1_inst);pc.c1_lhs;pc.c1_rhs|])) pc.c1_args in
-    let rpcbundle =  substl ipc_subst pcbundle in
-    let (dargs, dcl) = decompose_prod_assum rpcbundle in
-    let (_,v) = destApp dcl in
-    let inst = if Array.length pc.c1_inst = 0 then [||] else snd (destApp v.(0)) in
-    let lhs = v.(1) in
-    let rhs = v.(2) in
+    let (dargs,dargsi,inst,lhs,rhs) =
+      Inductive.map_pathcons (substl ipc_subst)
+	(pc.c1_args,pc.c1_args_info,pc.c1_inst,pc.c1_lhs,pc.c1_rhs) in
     { cs1_cstr = ith_constructor_of_inductive ind j';
       cs1_params = params;
       cs1_nargs = rel_context_length pc.c1_args;
       cs1_args = dargs;
+      cs1_args_info = dargsi;
       cs1_inst = inst;
       cs1_lhs = lhs;
       cs1_rhs = rhs }
@@ -394,7 +394,7 @@ let build_path_branch_type env dep pj cs br =
   let (_,mip as specif) = Inductive.lookup_mind_specif env ind in
   Inductive.build_path_branch_type ind specif (Array.of_list cs.cs1_params) pj dep br
     (snd cs.cs1_cstr-Array.length mip.mind_consnames,
-     cs.cs1_args, cs.cs1_inst, cs.cs1_lhs, cs.cs1_rhs)
+     cs.cs1_args, cs.cs1_args_info, cs.cs1_inst, cs.cs1_lhs, cs.cs1_rhs)
 
 (**************************************************)
 
