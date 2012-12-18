@@ -18,19 +18,17 @@ Check Interval_rect.
 (*
 Interval_rect
      : forall (P : Interval -> Type) (f : P left) (f0 : P right),
-       ((forall H : Interval, P H) -> segment @ f = f0) ->
-       forall i : Interval, P i
+       segment @ f = f0 -> forall i : Interval, P i
 *)
 Print Interval_rect.
 (*
 Interval_rect = 
-fun (P : Interval -> Type) (f : P left) (f0 : P right)
-  (g : (forall H : Interval, P H) -> segment @ f = f0) 
-  (i : Interval) =>
+fun (P : Interval -> Type) (f : P left) (f0 : P right) 
+  (g : segment @ f = f0) (i : Interval) =>
 match i as i0 return (P i0) with
 | left => f
 | right => f0
-| segment {h} => g h
+| segment x => g x
 end
 *)
 
@@ -39,7 +37,6 @@ eapply Interval_rect with (i:=x).
 Show Existentials.
 instantiate (1:=eq_refl).
 instantiate (1:=segment).
-intros _.
 unfold eq_rect.
 Scheme eq_indd := Induction for eq Sort Prop.
 exact (eq_indd _ left (fun z (e:left=z) =>
@@ -57,8 +54,7 @@ Check Circle_rect.
 (*
 Circle_rect
      : forall (P : Circle -> Type) (f : P base),
-       ((forall H : Circle, P H) -> loop @ f = f) ->
-       forall c : Circle, P c
+       loop @ f = f -> forall c : Circle, P c
 *)
 
 Inductive Circle' : Type :=
@@ -72,12 +68,33 @@ Check Circle'_rect.
 (*
 Circle'_rect
      : forall (P : Circle' -> Type) (f : P east) (f0 : P west),
-       ((forall H : Circle', P H) -> upper @ f0 = f) ->
-       ((forall H : Circle', P H) -> lower @ f = f0) ->
-       forall c : Circle', P c
+       upper @ f0 = f -> lower @ f = f0 -> forall c : Circle', P c
 *)
 
-(* Not accepted: use of refl *)
+Require Import Program.
+
+Lemma eq_rect_cst (A:Type) (x y:A) (e:x=y) (P:Type) (p:P) :
+  eq_rect x (fun _ => P) p y e = p.
+case e; reflexivity.
+Qed.
+
+Program Definition Circle'2Cirle (c:Circle') : Circle :=
+  Circle'_rect (fun _ => Circle) base base _ _ c.
+Next Obligation.
+apply eq_rect_cst.
+Defined.
+Next Obligation.
+apply eq_rect_cst.
+Defined.
+
+Program Definition Circle2Cirle' (c:Circle) : Circle' :=
+  Circle_rect (fun _ => Circle') east _ c.
+Next Obligation.
+apply eq_rect_cst.
+Defined.
+
+
+(* Not accepted: 2-constructor *)
 (*
 Inductive Sphere2 : Type :=
     | base2 : Sphere2
@@ -89,15 +106,14 @@ Inductive Susp (X : Type) : Type :=
     | north : Susp X
     | south : Susp X
 with paths :=
-    | merid (x:X) : north = south. (* name x is required ?! *)
+    | merid (x:X) : north = south.
 
 Check Susp_rect.
 (*
 Susp_rect
      : forall (X : Type) (P : Susp X -> Type) (f : P (north X))
          (f0 : P (south X)),
-       ((forall H : Susp X, P H) -> forall x : X, merid X x @ f = f0) ->
-       forall s : Susp X, P s
+       (forall x : X, merid X x @ f = f0) -> forall s : Susp X, P s
 *)
 
 Inductive Cyl {X Y : Type} (f : X -> Y) : Y -> Type :=
@@ -112,8 +128,7 @@ Cyl_rect
      : forall (X Y : Type) (f : X -> Y) (P : forall y : Y, Cyl f y -> Type)
          (f0 : forall y : Y, P y (cyl_base f y))
          (f1 : forall x : X, P (f x) (cyl_top f x)),
-       ((forall (H : Y) (H0 : Cyl f H), P H H0) ->
-        forall x : X, cyl_seg X Y f x @ f1 x = f0 (f x)) ->
+       (forall x : X, cyl_seg X Y f x @ f1 x = f0 (f x)) ->
        forall (y : Y) (c : Cyl f y), P y c
 *)
 
@@ -126,31 +141,17 @@ Check isInhab_rect.
 isInhab_rect
      : forall (X : Type) (P : isInhab X -> Type),
        (forall x : X, P (proj X x)) ->
-       (forall (h : forall H : isInhab X, P H) (y y' : isInhab X),
-        contr X y y' @ h y = h y') -> forall i : isInhab X, P i
-*)
-(*Axiom isInhab_rect : forall (X:Type),
-         forall (P : isInhab X -> Type)
-                (d_proj : forall x:X, P (proj x))
-                (d_contr : forall (z z' : isInhab X) (w : P z) (w' : P z'), (contr z z') @ w = w'),
-         forall z : isInhab X, P z
+       (forall (y : isInhab X) (h : P y) (y' : isInhab X) (h0 : P y'),
+        contr X y y' @ h = h0) -> forall i : isInhab X, P i
 *)
 
-(* Recursive 1-constructors not allowed yet:
+(* Recursive 1-constructors not allowed yet (+ defines 2-constructor):
 Inductive tr0 (X:Type) : Type :=
     | incl : X -> tr0 X
 with paths :=
     | contr (z : tr0 X) (p : z=z): p = (eq_refl z).
 *)
 
-(* 1-constructor builds equalities in X instead of tr0 X:
-Inductive tr0 (X:Type) : Type :=
-    | incl : X -> tr0 X
-with paths :=
-    | contr (l : Circle -> X) : (eq_refl (l base)) = (dmap l loop).
-*)
-
-(* Equivalent def: *)
 Inductive τ_0 X : Type :=
 | truncn : X -> τ_0 X
 | hub : (Circle -> τ_0 X) -> τ_0 X
@@ -162,8 +163,9 @@ Check τ_0_rect.
      : forall (X : Type) (P : τ_0 X -> Type),
        (forall x : X, P (truncn X x)) ->
        forall f0 : forall τ : Circle -> τ_0 X, P (hub X τ),
-       (forall (h : forall H : τ_0 X, P H) (l : Circle -> τ_0 X) (s : Circle),
-        spoke X l s @ f0 l = h (l s)) -> forall τ : τ_0 X, P τ
+       (forall (l : Circle -> τ_0 X) (h : forall H : Circle, P (l H))
+          (s : Circle), spoke X l s @ f0 l = h s) -> 
+       forall τ : τ_0 X, P τ
 *)
 
 (*
@@ -183,11 +185,10 @@ with paths :=
 | glue (a : A) : (inl (f a)) = (inr (g a)).
 Check hpushout_rect.
 (*
+hpushout_rect
      : forall (A B C : Type) (f : A -> B) (g : A -> C)
-         (P : hpushout f g -> Type)
-         (f0 : forall b : B, P (inl f g b))
-         (f1 : forall f1 : C, P (inr f g f1)),
-       ((forall H : hpushout f g, P H) ->
-        forall a : A, glue A B C f g a @ f0 (f a) = f1 (g a)) ->
+         (P : hpushout f g -> Type) (f0 : forall b : B, P (inl f g b))
+         (f1 : forall c : C, P (inr f g c)),
+       (forall a : A, glue A B C f g a @ f0 (f a) = f1 (g a)) ->
        forall h : hpushout f g, P h
 *)

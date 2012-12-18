@@ -806,6 +806,15 @@ let lift n = liftn n 1
 (*   Substituting    *)
 (*********************)
 
+(* The generic lifting function *)
+let rec exsubst esub c = match kind_of_term c with
+  | Rel i ->
+    (match expand_rel i esub with
+	Inl(lams,v) -> lift lams v
+      | Inr(i',_) -> mkRel i')
+  | _ -> map_constr_with_binders subs_lift exsubst esub c
+
+
 (* (subst1 M c) substitutes M for Rel(1) in c
    we generalise it to (substl [M1,...,Mn] c) which substitutes in parallel
    M1,...,Mn for respectively Rel(1),...,Rel(n) in c *)

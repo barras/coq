@@ -572,6 +572,9 @@ val subst1_decl : constr -> rel_declaration -> rel_declaration
 val subst1_named_decl : constr -> named_declaration -> named_declaration
 val substl_named_decl : constr list -> named_declaration -> named_declaration
 
+(** Applies an explicit substitution to a term *)
+val exsubst : constr Esubst.subs -> constr -> constr
+
 val replace_vars : (identifier * constr) list -> constr -> constr
 val subst_var : identifier -> constr -> constr
 

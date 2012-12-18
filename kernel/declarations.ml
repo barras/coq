@@ -246,6 +246,43 @@ type path_constructor = {
   c1_rhs : path_end
 }
 
+(** Performing a substitution/relocation operation on a
+    path_constructor. First build a dummy term, but with
+    the correct binding structure, apply the function
+    and read back the path_constructor. *)
+let map_pathconstructor f {c1_name=id;c1_args=args;c1_args_info=argsi;
+			   c1_inst=inst;c1_lhs=lhs;c1_rhs=rhs} =
+  let mkv v = mkApp(mkProp,v) in
+  let dv c = if isApp c then snd(destApp c) else [||] in
+  let pcbundle =
+    it_mkProd_or_LetIn(mkv[|mkv inst;lhs;rhs|]) args in
+  let rpcbundle = f pcbundle in
+  let infos =
+    Array.fold_right (fun oinfo hd ->
+      match oinfo with
+	  None -> mkLambda(Anonymous,mkSet,hd)
+	| Some(ctxt,ainst) ->
+	  mkProd(Anonymous,it_mkProd_or_LetIn (mkv ainst) ctxt,hd))
+      argsi mkProp in
+  let rinfos = f infos in
+  let rec dec_infos acc c =
+    match kind_of_term c with
+	Sort _ -> Array.of_list (List.rev acc)
+      | Lambda(_,_,d) -> dec_infos (None::acc) d
+      | Prod(_,ty,d) ->
+	let (ctxt,ainst) = decompose_prod_assum ty in
+	dec_infos (Some(ctxt,dv ainst)::acc) d
+      | _ -> assert false in
+  let (args, dcl) = decompose_prod_assum rpcbundle in
+  let argsi = dec_infos [] rinfos in
+  let v = dv dcl in
+  let inst = dv v.(0) in
+  let lhs = v.(1) in
+  let rhs = v.(2) in
+  {c1_name=id;c1_args=args;c1_args_info=argsi;
+   c1_inst=inst;c1_lhs=lhs;c1_rhs=rhs}
+
+
 type one_inductive_body = {
 
 (* Primitive datas *)
@@ -344,19 +381,6 @@ let subst_indarity sub = function
     }
 | Polymorphic s as x -> x
 
-let subst_pathcons sub pc = {
-  c1_name = pc.c1_name;
-  c1_args = map_rel_context (subst_mps sub) pc.c1_args;
-  c1_args_info =
-    Array.map (Option.map
-		 (fun (ctxt,inst) ->
-		   (map_rel_context (subst_mps sub) ctxt,
-		    Array.smartmap (subst_mps sub) inst))) pc.c1_args_info;
-  c1_inst = Array.smartmap (subst_mps sub) pc.c1_inst;
-  c1_lhs = subst_mps sub pc.c1_lhs;
-  c1_rhs = subst_mps sub pc.c1_rhs
-}
-
 let subst_mind_packet sub mbp =
   { mind_consnames = mbp.mind_consnames;
     mind_consnrealdecls = mbp.mind_consnrealdecls;
@@ -366,7 +390,9 @@ let subst_mind_packet sub mbp =
     mind_arity_ctxt = subst_rel_context sub mbp.mind_arity_ctxt;
     mind_arity = subst_indarity sub mbp.mind_arity;
     mind_user_lc = Array.smartmap (subst_mps sub) mbp.mind_user_lc;
-    mind_pathcons = Array.smartmap (subst_pathcons sub) mbp.mind_pathcons;
+    mind_pathcons =
+      Array.smartmap
+	(map_pathconstructor (subst_mps sub)) mbp.mind_pathcons;
     mind_nrealargs = mbp.mind_nrealargs;
     mind_nrealargs_ctxt = mbp.mind_nrealargs_ctxt;
     mind_kelim = mbp.mind_kelim;

@@ -252,6 +252,9 @@ let mk_mltype_data evdref env assums arity indname =
   let is_ml_type = is_sort env !evdref arity in
   (is_ml_type,indname,assums)
 
+let out_name = function
+  |  Name id -> id
+  | _ -> id_of_string"_"
 let prepare_param = function
   | (na,None,t) -> out_name na, LocalAssum t
   | (na,Some b,_) -> out_name na, LocalDef b

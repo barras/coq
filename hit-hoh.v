@@ -8,8 +8,8 @@ with paths :=
 Print circle.
 
 Axiom magic:forall T,T.
-Eval compute in (fun P f => circle_rect P f (fun h => magic _) base).
-Eval compute in (fun P f c => circle_rect P f (fun h => magic _) c).
+Eval compute in (fun P f => circle_rect P f (magic _) base).
+Eval compute in (fun P f c => circle_rect P f (magic _) c).
 
 
 Lemma L : base=base.
@@ -36,21 +36,20 @@ Inductive isInhab0 (X:Type) : Type :=
     | proj0 : X -> isInhab0 X
 with paths :=
     | contr0 (y y' : isInhab0 X) (x x':X) : (proj0 x) = (proj0 x').
-(*
+
 Inductive isInhab1 (X:Type) : Type :=
     | proj1 (x: X): isInhab1 X
 with paths :=
     | contr1 (y y' : nat->isInhab1 X) (n:nat) : (y n)=(y' 1).
 Print isInhab1_rect.
-*)
 
-(* bug with let-in args in 1-constructors ... *)
+
 (*Unset Elimination Schemes.*)
-Inductive isInhab1 (X:Type) : Type :=
-    | proj1 (x: X): isInhab1 X
+Inductive isInhab2 (X:Type) : Type :=
+    | proj2 (x: X): isInhab2 X
 with paths :=
-    | contr1 (n:nat)(m:=0)(y y' : nat->isInhab1 X) (a:=0)(b:=0) : (y n)=(y' 1).
-Print isInhab1_rect. (* buggy eta expansion of branches *)
+    | contr2 (n:nat)(m:=0)(y y' : nat->isInhab2 X) (a:=0)(b:=0) : (y n)=(y' 1).
+Print isInhab2_rect. (* buggy eta expansion of branches *)
 Notation "e @ x" := (eq_rect _ _ x _ e) (at level 60, right associativity).
 
 Inductive isInhab (X:Type)(f:X->X) : X->X->Type :=
@@ -98,13 +97,35 @@ Definition dmap {X:Type}{Y:X->Type}(f:forall x:X,Y x){x x':X}(e:x=x')
 
 Lemma circlep_eqn : forall A P f f0 f1 g n x c,
   dmap (circlep_rect A P f f0 f1 g _) (loopp A n x c) =
-  g (circlep_rect A P f f0 f1 g) n x c.
+  g n x c (fun m => circlep_rect A P f f0 f1 g _ (c m)).
 intros.
 unfold dmap.
-generalize (g (circlep_rect A P f f0 f1 g) n x c).
-generalize (loopp A n x c).
-(*destruct (loopp A n x c).
-
+Unset Printing Notations.
+Implicit Arguments eq [ ].
+(*
+change 
+((let y := basep1 A c in
+ fun e : eq _ _ y =>
+   eq
+     (eq (P (S O) (basep1 A c))
+        (eq_rect (basepn A (S O)) (P (S O))
+           (circlep_rect A P f f0 f1 g (S O) (basepn A (S O))) 
+           (basep1 A c) e)
+        (circlep_rect A P f f0 f1 g (S O) (basep1 A c)))
+     match
+       e as e in (eq _ _ z)
+       return
+         (eq (P (S O) z)
+            (eq_rect (basepn A (S O)) (P (S O))
+               (circlep_rect A P f f0 f1 g (S O) (basepn A (S O))) z e)
+            (circlep_rect A P f f0 f1 g (S O) z))
+     with
+     | eq_refl => eq_refl
+     end (g n x c (fun m : nat => circlep_rect A P f f0 f1 g O (c m)))
+)
+(loopp A n x c)
+).
+*)
 
 
 Variable
@@ -117,7 +138,7 @@ Variable
       eq_rect _ (P 1) (f1 1) _ (loopp A n x c) = f0 c (fun n => h 0 (c n))).
 
 
-
+(*
 Fixpoint circlep_recu (n : nat) (c : circlep A n) : P n c :=
   circlep_rect A P
     f
@@ -142,7 +163,7 @@ Inductive circle2 (n:nat) : nat->U :=
   base2 m : circle2 n m
 with paths := loop2_ (m:nat) : (base2 m) = (base2 m).
 
-
+(*
 Drop.
 #use"include";;
 #trace check_inductive;;
@@ -163,3 +184,4 @@ let eqind = (fst ind,-1);;
 let (mib,mip) = lookup_mind_specif (Global.env()) ind;;
 let a = arities_of_constructors (Global.env()) ind;;
 let a = arities_of_constructors (Global.env()) eqind;;
+*)

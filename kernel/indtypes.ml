@@ -614,22 +614,19 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs (lcnam
              the reduced form (i.e. substituting bd in the next arguments)
              but it looks saner like this... *)
 	  if not (List.for_all (noccur_between n ntypes) [bd;ty]) then
-	    error("let-in argument of a 1-constructor is not positive!");
-	  (ienv_push_decl d ienv, nmr, None::lreca, lrec) (* record the let ? *)
+	    error
+	      ("let-in argument '"
+	       ^(match na with Name id -> string_of_id id|_->"_")
+	       ^"' of 1-constructor '"^string_of_id pc_name^"'is not positive!");
+	  (ienv_push_decl d ienv, nmr, None::lreca, lrec)
        | None ->
 	  if !Flags.debug then Pp.msgerrnl(Pp.str "Check pos");
 	  let (nmr',recarg),recarity = check_pos ienv nmr empty_rel_context ty in
 	  (ienv_push_decl d ienv, nmr', recarity::lreca, recarg::lrec) in
     let ((_,n,ntypes,_ as ienv'),nmr,rev_lrecarity,rev_lrec) =
       Sign.fold_rel_context check_path_arg pc_args ~init:(ienv,nmr,[],[]) in
-    (* Relocate infos in the same context that the instance *)
-    let rev_lrecarity =
-      List.map_i (fun i oinfo ->
-	Option.map (fun (ctxt,ainst) ->
-	  (lift_rel_context i ctxt,
-	   Array.map (liftn i (rel_context_length ctxt+1)) ainst)) oinfo)
-	1 rev_lrecarity in
-    (* Here we drop the parameters from the instance field *)
+    (* Here we drop the parameters (including the non-uniform ones!) from the
+       instance field *)
     if !Flags.debug then Pp.msgerrnl(Pp.str "Drop params:");
     let inst = check_correct_par ienv' hyps (ntypes - i) pc_inst in
     (* TODO: build a structured info about the constructor... *)
@@ -662,6 +659,9 @@ let check_positivity_one (env,_,ntypes,_ as ienv) hyps (_,i as ind) nargs (lcnam
   let irecargs = Array.map snd irecargs_nmr in
   let nmr' = array_min nmr (Array.map fst irecargs_nmr) in
 
+  (* Beware: in the case of mutual inductive types, we want all the constructors
+     of all inductive definitions. So we won't be able to check the path
+     constructors here. This should be done in check_positivity. *)
   if !Flags.debug then Pp.msgerrnl(Pp.str "Done with point constructors");
   let ienv' = ienv_push_rel_context ienv (context_of_list lcnames (Array.to_list raw_cstr)) in
   let pc_ok = Array.map (check_path_constructors ienv' nmr') lpc in

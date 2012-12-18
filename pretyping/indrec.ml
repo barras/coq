@@ -73,21 +73,44 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
     get_constructors (push_rel (Anonymous,None,typP) env')
       (lift_inductive_family 1 indf) in
   let nc = Array.length constrs in
+  let nargstotal = nc + Array.length pconstrs + ndepar in
 
-  (* in env: params, P, previous branches (k) *)
-  let rec add_branch env k =
+  let build_path_branch env k =
+    let k' = k-nc in
+    let cs = pconstrs.(k') in
+    let br0 = Termops.rel_vect k' nc in
+(*    let rec process_branch_type (posn,brsub,prctxt) ty =
+      if posn < Array.length cs.cs1_args_info
+      match kind_of_term ty with
+
+      match cs.cs1_args_info.(posn) with
+	  None -> (posn+1,Esubst.subs_lift brsub,
+		   map_rel_declaration (exsubst brsub) d::prctxt)
+	| Some(ctxt,ainst) ->
+	  warning ("Recursive argument of 1-constructor: dropped rec call.");
+	  (posn+1,Esubst.subs_shft(1,Esubst.subs_lift brsub),
+	   (Name(id_of_string"h"),None,mkSet)::map_rel_declaration (exsubst brsub) d::prctxt) in*)
+    let t = build_path_branch_type ~recu:true env dep (mkRel (1+k))
+      (lift_path_constructor k cs) br0 in
+(*    let (_,hty,t) = destProd t in
+    let (_,brsub,prctxt) = 
+
+    let (brhyps,brty) = decompose_prod_assum t in
+    let ty = process_path_branch*)
+    (t,mkRel(nargstotal-k)) in
+
+  (* in env: params, P, previous branches types (k) *)
+  let rec add_branch env k br =
     if k < nc then
       let cs = constrs.(k) in
       let t = build_branch_type env dep (mkRel (1+k)) (lift_point_constructor k cs) in
       mkLambda_string "f" t
-	(add_branch (push_rel (Anonymous, None, t) env) (k+1))
-    else if k < nc + Array.length pconstrs then
-      let k' = k-nc in
-      let cs = pconstrs.(k') in
-      let br = Termops.rel_vect k' nc in
-      let t = build_path_branch_type env dep (mkRel (1+k)) (lift_path_constructor k cs) br in
+	(add_branch (push_rel (Anonymous, None, t) env) (k+1)
+	   (mkRel(nargstotal-k)::br))
+    else if k < nc+Array.length pconstrs then
+      let (t,brval) = build_path_branch env k in
       mkLambda_string "g" t
-	(add_branch (push_rel (Anonymous, None, t) env) (k+1))
+	(add_branch (push_rel (Anonymous, None, t) env) (k+1) (brval::br))
     else
       let nbprod = k+1 in
 
@@ -111,12 +134,12 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
       it_mkLambda_or_LetIn_name env'
        	(mkCase (ci, lift ndepar p,
 		     mkRel 1,
-		     Termops.rel_vect ndepar k))
+		     Array.of_list(List.rev br)))
        	deparsign
   in
   it_mkLambda_or_LetIn_name env
     (mkLambda_string "P" typP
-       (add_branch (push_rel (Anonymous,None,typP) env') 0)) lnamespar
+       (add_branch (push_rel (Anonymous,None,typP) env') 0 [])) lnamespar
 
 (* check if the type depends recursively on one of the inductive scheme *)
 
@@ -426,7 +449,7 @@ let mis_make_indrec env sigma listdepkind mib =
 	      let j' = j-nconstr0 in
 	      let cs = pconstrs.(j') in
 	      let br = Termops.rel_vect j' nconstr0 in
-	      let t = lift j' (build_path_branch_type env dep (mkRel (i+1)) cs br) in
+	      let t = lift j' (build_path_branch_type ~recu:true env dep (mkRel (i+1)) cs br) in
 	      mkLambda_string "g" t
 		(onerec (push_rel (Anonymous, None, t) env) (j+1))
 	    else

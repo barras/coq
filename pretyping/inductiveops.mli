@@ -130,7 +130,7 @@ val make_arity_signature : env -> bool -> inductive_family -> rel_context
 val make_arity : env -> bool -> inductive_family -> sorts -> types
 val build_branch_type : env -> bool -> constr -> point_constructor_summary -> types
 val build_path_branch_type :
-  env -> bool -> constr -> path_constructor_summary -> constr array -> types
+  recu:bool -> env -> bool -> constr -> path_constructor_summary -> constr array -> types
 
 (** Raise [Not_found] if not given an valid inductive type *)
 val extract_mrectype : constr -> inductive * constr list

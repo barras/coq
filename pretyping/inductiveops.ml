@@ -230,18 +230,23 @@ let lift_point_constructor n cs = {
   cs0_args = lift_rel_context n cs.cs0_args;
   cs0_concl_realargs = Array.map (liftn n (cs.cs0_nargs+1)) cs.cs0_concl_realargs
 }
-let lift_path_constructor n cs =
-  let (args,argsi,inst,lhs,rhs) =
-    Inductive.map_pathcons (lift n)
-      (cs.cs1_args,cs.cs1_args_info,cs.cs1_inst,cs.cs1_lhs,cs.cs1_rhs) in
+
+let map_path_constructor f cs =
+  let {c1_args=args;c1_args_info=argsi;c1_inst=inst;c1_lhs=lhs;c1_rhs=rhs} =
+    map_pathconstructor f
+      {c1_name=id_of_string"_";c1_args=cs.cs1_args;c1_args_info=cs.cs1_args_info;
+       c1_inst=cs.cs1_inst;c1_lhs=cs.cs1_lhs;c1_rhs=cs.cs1_rhs} in
   { cs1_cstr = cs.cs1_cstr;
-    cs1_params = List.map (lift n) cs.cs1_params;
+    cs1_params = List.map f cs.cs1_params;
     cs1_nargs = cs.cs1_nargs;
     cs1_args = args;
     cs1_args_info = argsi;
     cs1_inst = inst;
     cs1_lhs = lhs;
     cs1_rhs = rhs }
+
+let lift_path_constructor n cs =
+  map_path_constructor (lift n) cs
 
 (* Accept less parameters than in the signature *)
 
@@ -295,18 +300,16 @@ let get_path_constructor (ind,mib,mip,params) =
   fun j ->
     assert (j <= Array.length mip.mind_pathcons);
     let j' = j+Array.length mip.mind_consnames in
-    let pc =  mip.mind_pathcons.(j-1) in
-    let (dargs,dargsi,inst,lhs,rhs) =
-      Inductive.map_pathcons (substl ipc_subst)
-	(pc.c1_args,pc.c1_args_info,pc.c1_inst,pc.c1_lhs,pc.c1_rhs) in
+    let pc = map_pathconstructor
+      (substl ipc_subst) mip.mind_pathcons.(j-1) in
     { cs1_cstr = ith_constructor_of_inductive ind j';
       cs1_params = params;
       cs1_nargs = rel_context_length pc.c1_args;
-      cs1_args = dargs;
-      cs1_args_info = dargsi;
-      cs1_inst = inst;
-      cs1_lhs = lhs;
-      cs1_rhs = rhs }
+      cs1_args = pc.c1_args;
+      cs1_args_info = pc.c1_args_info;
+      cs1_inst = pc.c1_inst;
+      cs1_lhs = pc.c1_lhs;
+      cs1_rhs = pc.c1_rhs }
 
 let get_constructors env (ind,params) =
   let (mib,mip) = Inductive.lookup_mind_specif env ind in
@@ -389,12 +392,13 @@ let build_branch_type env dep p cs =
     it_mkProd_or_LetIn base cs.cs0_args
 
 
-let build_path_branch_type env dep pj cs br =
+let build_path_branch_type ~recu env dep pj cs br =
   let ind = fst cs.cs1_cstr in
   let (_,mip as specif) = Inductive.lookup_mind_specif env ind in
-  Inductive.build_path_branch_type ind specif (Array.of_list cs.cs1_params) pj dep br
+  Inductive.build_path_branch_type ~recu ind specif (Array.of_list cs.cs1_params) pj dep br
     (snd cs.cs1_cstr-Array.length mip.mind_consnames,
-     cs.cs1_args, cs.cs1_args_info, cs.cs1_inst, cs.cs1_lhs, cs.cs1_rhs)
+     {c1_name=id_of_string"_";c1_args=cs.cs1_args;c1_args_info=cs.cs1_args_info;
+      c1_inst=cs.cs1_inst;c1_lhs=cs.cs1_lhs;c1_rhs=cs.cs1_rhs})
 
 (**************************************************)
 

@@ -61,6 +61,7 @@ val inductive_params : mind_specif -> int
    the universe constraints generated.
  *)
 val type_case_branches :
+  ?recu:bool ->
   env -> inductive * constr list -> unsafe_judgment -> constr
     -> types array * (constr array -> types array) * types * constraints
 
@@ -68,22 +69,14 @@ val build_branches_type :
   inductive -> mutual_inductive_body * one_inductive_body ->
     constr list -> constr -> types array
 val build_path_branches_type :
+  recu:bool ->
   inductive -> mutual_inductive_body * one_inductive_body ->
   constr array -> constr -> constr array -> types array
 val build_path_branch_type :
+  recu:bool ->
   inductive -> mutual_inductive_body * one_inductive_body ->
   constr array -> constr -> bool -> constr array ->
-  (int * rel_context * (rel_context * constr array) option array *
-  constr array * constr * constr -> types)
-
-(** Applying a relocation or substution operation on the data
-    of a path constructor, respecting the binding structure *)
-val map_pathcons :
-  (constr -> constr) ->
-  rel_context * (rel_context * constr array) option array *
-    constr array * constr * constr ->
-  rel_context * (rel_context * constr array) option array *
-    constr array * constr * constr
+  (int * path_constructor) -> constr
 
 
 (** Return the arity of an inductive type *)

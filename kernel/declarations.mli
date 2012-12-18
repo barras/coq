@@ -137,6 +137,11 @@ type path_constructor = {
   c1_rhs : path_end
 }
 
+(** Applying a relocation or substution operation on the data
+    of a path constructor, respecting the binding structure *)
+val map_pathconstructor :
+  (constr -> constr) -> path_constructor -> path_constructor
+
 type one_inductive_body = {
 (** {8 Primitive datas } *)
 
