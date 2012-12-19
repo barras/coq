@@ -157,7 +157,8 @@ let match_with_disjunction ?(strict=false) ?(onlybinary=false) t =
   | Ind ind  ->
       let car = mis_constr_nargs ind in
       let (mib,mip) = Global.lookup_inductive ind in
-      if Array.for_all (fun ar -> Int.equal ar 1) car
+      if Array.for_all (fun ar -> Int.equal ar 1) (fst car)
+	&& Array.length (snd car) = 0
 	&& not (mis_is_recursive (ind,mib,mip))
         && (Int.equal mip.mind_nrealargs 0)
       then

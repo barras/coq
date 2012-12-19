@@ -145,10 +145,11 @@ let generalizable_vars_of_glob_constr ?(bound=Idset.empty) ?(allowed=Idset.empty
 	let vs' = vars bound vs ty in
 	let bound' = add_name_to_ids bound na in
 	vars bound' vs' c
-    | GCases (loc,sty,rtntypopt,tml,pl) ->
+    | GCases (loc,fxid,sty,rtntypopt,tml,pl) ->
 	let vs1 = vars_option bound vs rtntypopt in
 	let vs2 = List.fold_left (fun vs (tm,_) -> vars bound vs tm) vs1 tml in
-	List.fold_left (vars_pattern bound) vs2 pl
+	let bound' = Option.fold_left (fun ids (_,id) -> add_name_to_ids ids (Name id)) bound fxid in
+	List.fold_left (vars_pattern bound') vs2 pl
     | GLetTuple (loc,nal,rtntyp,b,c) ->
 	let vs1 = vars_return_type bound vs rtntyp in
 	let vs2 = vars bound vs1 b in

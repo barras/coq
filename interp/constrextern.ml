@@ -224,7 +224,8 @@ let rec check_same_type ty1 ty2 =
         check_same_type a1 a2
       in
       List.iter2 check_args al1 al2
-  | CCases(_,_,_,a1,brl1), CCases(_,_,_,a2,brl2) ->
+  | CCases(_,fxid1,_,_,a1,brl1), CCases(_,fxid2,_,_,a2,brl2) ->
+      if fxid1<>fxid2 then failwith "not same fxid";
       List.iter2 (fun (tm1,_) (tm2,_) -> check_same_type tm1 tm2) a1 a2;
       List.iter2 (fun (_,pl1,r1) (_,pl2,r2) ->
         List.iter2 (Loc.located_iter2 (List.iter2 check_same_pattern)) pl1 pl2;
@@ -775,7 +776,7 @@ let rec extern inctx scopes vars r =
       let (idl,c) = factorize_lambda inctx scopes (add_vname vars na) na bk t c in
       CLambdaN (loc,[(Loc.ghost,na)::idl,Default bk,t],c)
 
-  | GCases (loc,sty,rtntypopt,tml,eqns) ->
+  | GCases (loc,fxid,sty,rtntypopt,tml,eqns) ->
     let vars' =
       List.fold_right (name_fold Idset.add)
 	(cases_predicate_names tml) vars in
@@ -802,7 +803,7 @@ let rec extern inctx scopes vars r =
 	 extern_ind_pattern_in_scope scopes vars ind fullargs
 	) x))) tml in
     let eqns = List.map (extern_eqn inctx scopes vars) eqns in
-    CCases (loc,sty,rtntypopt',tml,eqns)
+    CCases (loc,fxid,sty,rtntypopt',tml,eqns)
 
   | GLetTuple (loc,nal,(na,typopt),tm,b) ->
       CLetTuple (loc,List.map (fun na -> (Loc.ghost,na)) nal,
@@ -1080,7 +1081,7 @@ let rec glob_of_pat env = function
 	  return_type_of_predicate ind nargs (glob_of_pat env p)
 	| _ -> anomaly "PCase with non-trivial predicate but unknown inductive"
       in
-      GCases (loc,RegularStyle,rtn,[glob_of_pat env tm,indnames],mat)
+      GCases (loc,None,RegularStyle,rtn,[glob_of_pat env tm,indnames],mat)
   | PFix f -> Detyping.detype false [] env (mkFix f)
   | PCoFix c -> Detyping.detype false [] env (mkCoFix c)
   | PSort s -> GSort (loc,s)

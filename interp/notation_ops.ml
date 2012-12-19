@@ -88,7 +88,7 @@ let glob_constr_of_notation_constr_with_binders loc g f e = function
 	let ((idl,e),patl) =
 	  List.fold_map (cases_pattern_fold_map loc fold) ([],e) patl in
 	(loc,idl,patl,f e rhs)) eqnl in
-      GCases (loc,sty,Option.map (f e') rtntypopt,tml',eqnl')
+      GCases (loc,None,sty,Option.map (f e') rtntypopt,tml',eqnl')
   | NLetTuple (nal,(na,po),b,c) ->
       let e',nal = List.fold_map g e nal in
       let e'',na = g e na in
@@ -262,7 +262,7 @@ let notation_constr_and_vars_of_glob_constr a =
   | GLambda (_,na,bk,ty,c) -> add_name found na; NLambda (na,aux ty,aux c)
   | GProd (_,na,bk,ty,c) -> add_name found na; NProd (na,aux ty,aux c)
   | GLetIn (_,na,b,c) -> add_name found na; NLetIn (na,aux b,aux c)
-  | GCases (_,sty,rtntypopt,tml,eqnl) ->
+  | GCases (_,fxid,sty,rtntypopt,tml,eqnl) ->
       let f (_,idl,pat,rhs) = List.iter (add_id found) idl; (pat,aux rhs) in
       NCases (sty,Option.map aux rtntypopt,
         List.map (fun (tm,(na,x)) ->
@@ -654,7 +654,7 @@ let rec match_ inner u alp (tmetas,blmetas as metas) sigma a1 a2 =
      match_binders u alp metas na1 na2 (match_in u alp metas sigma t1 t2) b1 b2
   | GLetIn (_,na1,t1,b1), NLetIn (na2,t2,b2) ->
      match_binders u alp metas na1 na2 (match_in u alp metas sigma t1 t2) b1 b2
-  | GCases (_,sty1,rtno1,tml1,eqnl1), NCases (sty2,rtno2,tml2,eqnl2)
+  | GCases (_,fxid,sty1,rtno1,tml1,eqnl1), NCases (sty2,rtno2,tml2,eqnl2)
       when sty1 == sty2
 	 && Int.equal (List.length tml1) (List.length tml2)
 	 && Int.equal (List.length eqnl1) (List.length eqnl2) ->

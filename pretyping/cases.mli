@@ -48,7 +48,7 @@ val error_needs_inversion : env -> constr -> types -> 'a
 (** {6 Compilation primitive. } *)
 
 val compile_cases :
-  Loc.t -> case_style ->
+  Loc.t -> (Loc.t * identifier) option -> case_style ->
   (type_constraint -> env -> evar_map ref -> glob_constr -> unsafe_judgment) * evar_map ref ->
   type_constraint ->
   env -> glob_constr option * tomatch_tuples * cases_clauses ->
@@ -107,6 +107,7 @@ type 'a pattern_matching_problem =
     { env       : env;
       evdref    : evar_map ref;
       pred      : constr;
+      fxid      : identifier option;
       tomatch   : tomatch_stack;
       history   : pattern_continuation;
       mat       : 'a matrix;
@@ -116,3 +117,18 @@ type 'a pattern_matching_problem =
 
 
 val compile : 'a pattern_matching_problem -> Environ.unsafe_judgment
+
+(** debug *)
+val build_leaf : 'a pattern_matching_problem -> Environ.unsafe_judgment
+val build_branch :
+           Term.constr ->
+           Term.constr list ->
+           'a ->
+           'b list * Names.name ->
+           'c pattern_matching_problem ->
+           Term.rel_context ->
+           (Glob_term.cases_pattern list * Names.name * 'c equation) list ->
+           Inductiveops.point_constructor_summary ->
+           (Names.name * Term.constr option * Term.types) list *
+           'c pattern_matching_problem
+

@@ -339,7 +339,7 @@ let judge_of_case env ci pj cj lfj =
     with Not_found -> error_case_not_inductive env cj in
   let _ = check_case_info env (fst indspec) ci in
   let (bty,pbty,rslty,univ) =
-    type_case_branches ~recu:true env indspec pj cj.uj_val in
+    type_case_branches ~recu:false env indspec pj cj.uj_val in
   let lfj, lgj = Array.chop (Array.length bty) lfj in
   let univ' = check_branch_types env (fun i -> (fst indspec,i+1)) cj (lfj,bty) in
   let univ'' =

@@ -250,14 +250,16 @@ GEXTEND Gram
           CLetTuple (!@loc,lb,po,c1,c2)
       | "let"; "'"; p=pattern; ":="; c1 = operconstr LEVEL "200";
           "in"; c2 = operconstr LEVEL "200" ->
-	    CCases (!@loc, LetPatternStyle, None, [(c1,(None,None))], [(!@loc, [(!@loc,[p])], c2)])
+	    CCases (!@loc, None, LetPatternStyle, None, [(c1,(None,None))], [(!@loc, [(!@loc,[p])], c2)])
       | "let"; "'"; p=pattern; ":="; c1 = operconstr LEVEL "200";
 	  rt = case_type; "in"; c2 = operconstr LEVEL "200" ->
-	    CCases (!@loc, LetPatternStyle, Some rt, [(c1, (aliasvar p, None))], [(!@loc, [(!@loc, [p])], c2)])
+	    CCases (!@loc, None, LetPatternStyle, Some rt,
+		    [(c1, (aliasvar p, None))], [(!@loc, [(!@loc, [p])], c2)])
       | "let"; "'"; p=pattern; "in"; t = pattern LEVEL "200";
 	  ":="; c1 = operconstr LEVEL "200"; rt = case_type;
           "in"; c2 = operconstr LEVEL "200" ->
-	    CCases (!@loc, LetPatternStyle, Some rt, [(c1, (aliasvar p, Some t))], [(!@loc, [(!@loc, [p])], c2)])
+	    CCases (!@loc, None, LetPatternStyle, Some rt,
+		    [(c1, (aliasvar p, Some t))], [(!@loc, [(!@loc, [p])], c2)])
       | "if"; c=operconstr LEVEL "200"; po = return_type;
 	"then"; b1=operconstr LEVEL "200";
         "else"; b2=operconstr LEVEL "200" ->
@@ -298,7 +300,9 @@ GEXTEND Gram
   ;
   match_constr:
     [ [ "match"; ci=LIST1 case_item SEP ","; ty=OPT case_type; "with";
-        br=branches; "end" -> CCases(!@loc,RegularStyle,ty,ci,br) ] ]
+        br=branches; "end" -> CCases(!@loc,None,RegularStyle,ty,ci,br) ]
+    | [ "fixmatch"; "{"; id=identref; "}"; ci=LIST1 case_item SEP ","; ty=OPT case_type; "with";
+        br=branches; "end" -> CCases(!@loc,Some id,RegularStyle,ty,ci,br) ] ]
   ;
   case_item:
     [ [ c=operconstr LEVEL "100"; p=pred_pattern -> (c,p) ] ]

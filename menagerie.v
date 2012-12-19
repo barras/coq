@@ -1,5 +1,10 @@
 (** The menagerie *)
 
+Lemma eq_rect_cst (A:Type) (x y:A) (e:x=y) (P:Type) (p:P) :
+  eq_rect x (fun _ => P) p y e = p.
+case e; reflexivity.
+Qed.
+
 Notation "e @ x" := (eq_rect _ _ x _ e) (at level 60, right associativity).
 Definition dmap {X:Type}{Y:X->Type}(f:forall x:X,Y x){x x':X}(e:x=x')
    : eq_rect x Y (f x) x' e = f x' :=
@@ -72,11 +77,6 @@ Circle'_rect
 *)
 
 Require Import Program.
-
-Lemma eq_rect_cst (A:Type) (x y:A) (e:x=y) (P:Type) (p:P) :
-  eq_rect x (fun _ => P) p y e = p.
-case e; reflexivity.
-Qed.
 
 Program Definition Circle'2Cirle (c:Circle') : Circle :=
   Circle'_rect (fun _ => Circle) base base _ _ c.

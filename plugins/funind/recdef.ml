@@ -189,7 +189,7 @@ let (value_f:constr list -> global_reference -> constr) =
     let env = Environ.push_rel_context context (Global.env ()) in
     let glob_body =
       GCases
-	(d0,RegularStyle,None,
+	(d0,None,RegularStyle,None,
 	 [GApp(d0, GRef(d0,fterm), List.rev_map (fun x_id -> GVar(d0, x_id)) rev_x_id_l),
 	  (Anonymous,None)],
 	 [d0, [v_id], [PatCstr(d0,(destIndRef

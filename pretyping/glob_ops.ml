@@ -57,11 +57,11 @@ let map_glob_constr_left_to_right f = function
       let comp1 = f b in
       let comp2 = f c in
       GLetIn (loc,na,comp1,comp2)
-  | GCases (loc,sty,rtntypopt,tml,pl) ->
+  | GCases (loc,fxid,sty,rtntypopt,tml,pl) ->
       let comp1 = Option.map f rtntypopt in
       let comp2 = Util.List.map_left (fun (tm,x) -> (f tm,x)) tml in
       let comp3 = Util.List.map_left (fun (loc,idl,p,c) -> (loc,idl,p,f c)) pl in
-      GCases (loc,sty,comp1,comp2,comp3)
+      GCases (loc,fxid,sty,comp1,comp2,comp3)
   | GLetTuple (loc,nal,(na,po),b,c) ->
       let comp1 = Option.map f po in
       let comp2 = f b in
@@ -91,7 +91,7 @@ let fold_glob_constr f acc =
   | GApp (_,c,args) -> List.fold_left fold (fold acc c) args
   | GLambda (_,_,_,b,c) | GProd (_,_,_,b,c) | GLetIn (_,_,b,c) ->
       fold (fold acc b) c
-  | GCases (_,_,rtntypopt,tml,pl) ->
+  | GCases (_,_,_,rtntypopt,tml,pl) ->
       List.fold_left fold_pattern
 	(List.fold_left fold (Option.fold_left fold acc rtntypopt) (List.map fst tml))
 	pl
@@ -129,7 +129,7 @@ let occur_glob_constr id =
       (occur ty) || (not (same_id na id) && (occur c))
     | GLetIn (loc,na,b,c) ->
       (occur b) || (not (same_id na id) && (occur c))
-    | GCases (loc,sty,rtntypopt,tml,pl) ->
+    | GCases (loc,fx_id,sty,rtntypopt,tml,pl) ->
 	(occur_option rtntypopt)
         or (List.exists (fun (tm,_) -> occur tm) tml)
 	or (List.exists occur_pattern pl)
@@ -175,7 +175,7 @@ let free_glob_vars  =
 	let vs' = vars bounded vs ty in
 	let bounded' = add_name_to_ids bounded na in
        vars bounded' vs' c
-    | GCases (loc,sty,rtntypopt,tml,pl) ->
+    | GCases (loc,fxid,sty,rtntypopt,tml,pl) -> (* TODO: fxid binds a name *)
 	let vs1 = vars_option bounded vs rtntypopt in
 	let vs2 = List.fold_left (fun vs (tm,_) -> vars bounded vs tm) vs1 tml in
 	List.fold_left (vars_pattern bounded) vs2 pl
@@ -235,7 +235,7 @@ let loc_of_glob_constr = function
   | GLambda (loc,_,_,_,_) -> loc
   | GProd (loc,_,_,_,_) -> loc
   | GLetIn (loc,_,_,_) -> loc
-  | GCases (loc,_,_,_,_) -> loc
+  | GCases (loc,_,_,_,_,_) -> loc
   | GLetTuple (loc,_,_,_,_) -> loc
   | GIf (loc,_,_,_,_) -> loc
   | GRec (loc,_,_,_,_,_) -> loc

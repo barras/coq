@@ -347,7 +347,7 @@ let rec pat_of_raw metas vars = function
       in
       PCase (cip, PMeta None, pat_of_raw metas vars b,
              [0,1,pat_of_raw metas vars c])
-  | GCases (loc,sty,p,[c,(na,indnames)],brs) ->
+  | GCases (loc,fxid,sty,p,[c,(na,indnames)],brs) ->
       let get_ind = function
 	| (_,_,[PatCstr(_,(ind,_),_,_)],_)::_ -> Some ind
 	| _ -> None

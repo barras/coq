@@ -445,16 +445,31 @@ let build_path_norec_branch_type ind (mib,mip) params p dep =
 
 
 (** Point branches are not recursive here *)
-let build_path_rec_branch_type ind (mib,mip) params p dep br (i,pc) =
+let build_path_rec_branch_type ind (mib,mip) params p dep =
   (* number of 0-constructors (= number of branches in the context...) *)
   let nc = Array.length mip.mind_consnames in
+  (* type of the match as a function: forall (a:pargs) (i:I(p,a)), P(a,i) *)
+  let hty =
+    let arsign,_ = get_instantiated_arity (mib,mip) (Array.to_list params) in
+    let na = rel_context_length arsign in
+    let (na',pargs) =
+      if dep then
+	let inst = Sign.args_of_rel_context 0 arsign in
+	let ity = mkApp(mkApp(mkInd ind,Array.map (lift na) params),inst) in
+	(na+1, (Anonymous,None,ity)::arsign)
+      else
+	(na,arsign) in
+    it_mkProd_or_LetIn
+      (beta_appvect(lift na' p) (Sign.args_of_rel_context 0 pargs)) pargs in
+  fun br (i,pc) ->
   assert (Array.length br = nc);
   let cstr = mkConstruct(ind,i+nc) in
   let nz = Array.length pc.c1_args_info in
-  let (_,nz',dargs_rec,rel) =
-    Sign.fold_rel_context (fun (na,bd,ty as d) (posn,posn',prctxt,rel) ->
+  let (_,nz',dargs_rec,rel,rel_inv) =
+    Sign.fold_rel_context (fun (na,bd,ty as d) (posn,posn',prctxt,rel,rel_inv) ->
       match pc.c1_args_info.(posn) with
-	  None -> (posn+1,posn'+1,map_rel_declaration(exsubst rel)d::prctxt,Esubst.subs_lift rel)
+	  None -> (posn+1,posn'+1,map_rel_declaration(exsubst rel)d::prctxt,
+		   Esubst.subs_lift rel, Esubst.subs_lift rel_inv)
 	| Some(ctxt,ainst) ->
 	  assert (bd=None);
 	  (* Drop parameters (params may or may not contain non-unif param) *)
@@ -463,17 +478,34 @@ let build_path_rec_branch_type ind (mib,mip) params p dep br (i,pc) =
 	  (* non-uniform parameters crash here *)
 	  assert (Array.length pc.c1_inst = Array.length ainst);
 	  let na = rel_context_length ctxt in
-	  let indobj = mkApp(mkRel(1+na),Sign.args_of_rel_context 0 ctxt) in
-	  (*TODO: relocate ainst *)
-	  let ainst = Array.map(exsubst(Esubst.subs_liftn na (Esubst.subs_shft(1,rel)))) ainst in
+	  (* Relocate ctxt and ainst *)
+	  let ctxtinst = it_mkProd_or_LetIn (mkApp(mkProp,ainst)) ctxt in
+	  let (ctxt,ainst) =
+	    let (ctxt,ainst) = decompose_prod_assum (exsubst(Esubst.subs_shft(1,rel))ctxtinst) in
+	    if isApp ainst then (ctxt,snd(destApp ainst)) else (ctxt,[||]) in
 	  let hty =
-	    it_mkProd_or_LetIn (mkApp(mkApp(lift(posn'+1+na)p,ainst),[|indobj|])) ctxt in
+	    if dep then
+	      let indobj = mkApp(mkRel(1+na),Sign.args_of_rel_context 0 ctxt) in
+	      it_mkProd_or_LetIn
+		(beta_appvect(beta_appvect(lift(posn'+1+na)p) ainst) [|indobj|]) ctxt
+	    else
+	      it_mkProd_or_LetIn (beta_appvect(lift(posn'+1+na)p) ainst) ctxt in
+	  let h_inv =
+	    let ctxtinst_inv = liftn 1 (1+posn) (lift 1 ctxtinst) in
+	    let (ctxt_inv,ainst_inv) =
+	      let (ctxt,ainst) = decompose_prod_assum ctxtinst_inv in
+	      if isApp ainst then (ctxt,snd(destApp ainst)) else (ctxt,[||]) in
+	    let hd =
+	      mkApp(mkApp(mkRel(posn+na+2),ainst_inv),
+		    [|mkApp(mkRel (1+na),Sign.args_of_rel_context 0 ctxt_inv)|]) in
+	    it_mkLambda_or_LetIn hd ctxt_inv in
 	  (posn+1,posn'+2,
 	   (Name(id_of_string"h"),None,hty)::
 	   map_rel_declaration(exsubst rel)d::prctxt,
-	   Esubst.subs_shft (1, Esubst.subs_lift rel)))
+	   Esubst.subs_shft (1, Esubst.subs_lift rel),
+	   Esubst.subs_cons([|h_inv|],Esubst.subs_lift rel_inv)))
       pc.c1_args
-      ~init:(0,0,empty_rel_context,Esubst.subs_id 0) in
+      ~init:(0,0,empty_rel_context,Esubst.subs_id 0,Esubst.subs_shft(1,Esubst.subs_id 0)) in
   let par' = Array.map (lift nz') params in
   (* Computes the lhs or rhs where constructors are replaced by 0-branches and
      recursive variables by calls to the variable following them (k is the number
@@ -522,12 +554,21 @@ let build_path_rec_branch_type ind (mib,mip) params p dep br (i,pc) =
       let d = mkApp(cstr,Array.append par' (Array.map(exsubst rel)(Sign.args_of_rel_context 0 pc.c1_args))) in
       mkApp(eq_cst,[|tyrhs;mkApp(tr_cst,[|ity;lhs;ty;lhs';rhs;d|]);rhs'|]) in
 
+  let args_inv =
+    fst(decompose_prod_assum(lift 1 (it_mkProd_or_LetIn mkProp pc.c1_args))) in
+  Pp.msg_warning(Pp.str"Found a recarg. Good.");
+  let inst_inv =
+    Array.map (exsubst rel_inv) (Sign.args_of_rel_context 0 dargs_rec) in
+
   (* Generate the type of the branch in the context containing the 0-branches *)
-  it_mkProd_or_LetIn make_transport dargs_rec
+  (it_mkProd_or_LetIn make_transport dargs_rec,
+   (mkLambda(Name(id_of_string"h"),hty,it_mkLambda_or_LetIn (mkApp(mkProp,inst_inv)) args_inv)))
 
 
 let build_path_branch_type ~recu =
-  if recu then build_path_rec_branch_type
+  if recu then
+    (fun ind specif params p dep br ipc ->
+	fst (build_path_rec_branch_type ind specif params p dep br ipc))
   else build_path_norec_branch_type
 
 

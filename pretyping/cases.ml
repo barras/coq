@@ -235,6 +235,7 @@ type 'a pattern_matching_problem =
     { env       : env;
       evdref    : evar_map ref;
       pred      : constr;
+      fxid      : identifier option;
       tomatch   : tomatch_stack;
       history   : pattern_continuation;
       mat       : 'a matrix;
@@ -442,21 +443,29 @@ let rec adjust_local_defs loc = function
   | [], [] -> []
   | _ -> raise NotAdjustable
 
-let check_and_adjust_constructor env ind cstrs = function
+let check_and_adjust_constructor env ind (cstrs,pcstrs) = function
   | PatVar _ as pat -> pat
   | PatCstr (loc,((_,i) as cstr),args,alias) as pat ->
       (* Check it is constructor of the right type *)
       let ind' = inductive_of_constructor cstr in
       if eq_ind ind' ind then
 	(* Check the constructor has the right number of args *)
-	let ci = cstrs.(i-1) in
-	let nb_args_constr = ci.cs0_nargs in
-	if Int.equal (List.length args) nb_args_constr then pat
-	else
-	  try
-	    let args' = adjust_local_defs loc (args, List.rev ci.cs0_args)
-	    in PatCstr (loc, cstr, args', alias)
-	  with NotAdjustable ->
+	if i <= Array.length cstrs then begin
+	  let ci = cstrs.(i-1) in
+	  let nb_args_constr = ci.cs0_nargs in
+	  if Int.equal (List.length args) nb_args_constr then pat
+	  else
+	    try
+	      let args' = adjust_local_defs loc (args, List.rev ci.cs0_args)
+	      in PatCstr (loc, cstr, args', alias)
+	    with NotAdjustable ->
+	      error_wrong_numarg_constructor_loc loc (Global.env())
+		cstr nb_args_constr
+	end else
+	  let ci = pcstrs.(i-1-Array.length cstrs) in
+	  let nb_args_constr = ci.cs1_nargs in
+	  if Int.equal (List.length args) nb_args_constr then pat
+	  else
 	    error_wrong_numarg_constructor_loc loc (Global.env())
 	      cstr nb_args_constr
       else
@@ -1083,24 +1092,26 @@ let rec irrefutable env = function
   | PatCstr (_,cstr,args,_) ->
       let ind = inductive_of_constructor cstr in
       let (_,mip) = Inductive.lookup_mind_specif env ind in
-      let one_constr = Int.equal (Array.length mip.mind_user_lc) 1 in
+      let one_constr = Int.equal (Array.length mip.mind_user_lc) 1
+	&& Array.length mip.mind_pathcons = 0 in
       one_constr && List.for_all (irrefutable env) args
 
 let first_clause_irrefutable env = function
   | eqn::mat -> List.for_all (irrefutable env) eqn.patterns
   | _ -> false
 
-let group_equations pb ind current cstrs mat =
+let group_equations pb ind current (cstrs,pcstrs) mat =
   let mat =
     if first_clause_irrefutable pb.env mat then [List.hd mat] else mat in
   let brs = Array.create (Array.length cstrs) [] in
+  let pbrs = Array.create (Array.length pcstrs) [] in
   let only_default = ref true in
   let _ =
     List.fold_right (* To be sure it's from bottom to top *)
       (fun eqn () ->
 	 let rest = remove_current_pattern eqn in
 	 let pat = current_pattern eqn in
-	 match check_and_adjust_constructor pb.env ind cstrs pat with
+	 match check_and_adjust_constructor pb.env ind (cstrs,pcstrs) pat with
 	   | PatVar (_,name) ->
 	       (* This is a default clause that we expand *)
 	       for i=1 to Array.length cstrs do
@@ -1108,10 +1119,15 @@ let group_equations pb ind current cstrs mat =
 		 brs.(i-1) <- (args, name, rest) :: brs.(i-1)
 	       done
 	   | PatCstr (loc,((_,i)),args,name) ->
-	       (* This is a regular clause *)
-	       only_default := false;
-	       brs.(i-1) <- (args, name, rest) :: brs.(i-1)) mat () in
-  (brs,!only_default)
+	     (* This is a regular clause *)
+	     only_default := false;
+	     if i <= Array.length cstrs then
+	       brs.(i-1) <- (args, name, rest) :: brs.(i-1)
+	     else
+	       pbrs.(i-1-Array.length cstrs) <-
+		 (args, name, rest) :: pbrs.(i-1-Array.length cstrs))
+      mat () in
+  (brs,pbrs,!only_default)
 
 (************************************************************************)
 (* Here starts the pattern-matching compilation algorithm *)
@@ -1244,6 +1260,20 @@ let build_branch current realargs deps (realnames,curname) pb arsign eqns const_
       history = history;
       mat = List.map (push_rels_eqn_with_names typs) submat }
 
+let build_path_branch current realargs deps (realnames,curname) pb arsign eqns const_info =
+  let na = match pb.fxid with Some id -> Name id | None -> Anonymous in
+  let hack_cs =
+    { cs0_cstr = const_info.cs1_cstr;
+      cs0_params = const_info.cs1_params;
+      cs0_nargs = const_info.cs1_nargs(*+1*);
+      cs0_args = const_info.cs1_args;
+(*	lift_rel_context 1 (const_info.cs1_args)@[na,None,pb.pred];*)
+      cs0_concl_realargs = [||] (*?*)
+    } in
+  (* We never know...*)
+  let pb = {pb with env = push_rel(na,None,pb.pred)pb.env}in
+  build_branch current realargs deps (realnames,curname) pb arsign eqns hack_cs
+
 (**********************************************************************
  INVARIANT:
 
@@ -1276,11 +1306,10 @@ and match_current pb tomatch =
 	shift_problem tomatch pb
     | IsInd (_,(IndType(indf,realargs) as indt),names) ->
 	let mind,_ = dest_ind_family indf in
-	(* hit: drop path constructors *)
-	let (cstrs,_) = get_constructors pb.env indf in
+	let (cstrs,pcstrs) = get_constructors pb.env indf in
 	let arsign, _ = get_arity pb.env indf in
-	let eqns,onlydflt = group_equations pb mind current cstrs pb.mat in
-        let no_cstr = Int.equal (Array.length cstrs) 0 in
+	let eqns,peqns,onlydflt = group_equations pb mind current (cstrs,pcstrs) pb.mat in
+        let no_cstr = Int.equal (Array.length cstrs+Array.length pcstrs) 0 in
 	if (not no_cstr || not (List.is_empty pb.mat)) && onlydflt  then
 	  shift_problem tomatch pb
 	else
@@ -1289,6 +1318,8 @@ and match_current pb tomatch =
 
 	  (* We compile branches *)
 	  let brvals = Array.map2 (compile_branch current realargs (names,dep) deps pb arsign) eqns cstrs in
+	  let pbrvals =
+	    Array.map2 (compile_path_branch current realargs (names,dep) deps pb arsign) peqns pcstrs in
 	  (* We build the (elementary) case analysis *)
           let depstocheck = current::binding_vars_of_inductive typ in
           let brvals,tomatch,pred,inst =
@@ -1296,12 +1327,14 @@ and match_current pb tomatch =
               brvals pb.tomatch pb.pred deps cstrs in
           let brvals = Array.map (fun (sign,body) ->
             it_mkLambda_or_LetIn body sign) brvals in
+          let pbrvals = Array.map (fun (sign,body) ->
+            it_mkLambda_or_LetIn body sign) pbrvals in
 	  let (pred,typ) =
 	    find_predicate pb.caseloc pb.env pb.evdref
 	      pred current indt (names,dep) tomatch in
 	  let ci = make_case_info pb.env mind pb.casestyle in
 	  let pred = nf_betaiota !(pb.evdref) pred in
-	  let case = mkCase (ci,pred,current,brvals) in
+	  let case = mkCase (ci,pred,current,Array.append brvals pbrvals) in
 	  Typing.check_allowed_sort pb.env !(pb.evdref) mind current pred;
 	  { uj_val = applist (case, inst);
 	    uj_type = prod_applist typ inst }
@@ -1325,6 +1358,10 @@ and shift_problem ((current,t),_,na) pb =
 (* Building the sub-problem when all patterns are variables *)
 and compile_branch current realargs names deps pb arsign eqns cstr =
   let sign, pb = build_branch current realargs deps names pb arsign eqns cstr in
+  sign, (compile pb).uj_val
+
+and compile_path_branch current realargs names deps pb arsign eqns cstr =
+  let sign, pb = build_path_branch current realargs deps names pb arsign eqns cstr in
   sign, (compile pb).uj_val
 
 (* Abstract over a declaration before continuing splitting *)
@@ -1658,6 +1695,7 @@ let build_inversion_problem loc env sigma tms t =
     { env       = pb_env;
       evdref    = evdref;
       pred      = new_Type();
+      fxid = None;
       tomatch   = sub_tms;
       history   = start_history n;
       mat       = [eqn1;eqn2];
@@ -2225,7 +2263,7 @@ let context_of_arsign l =
     l ([], 0)
   in x
 
-let compile_program_cases loc style (typing_function, evdref) tycon env
+let compile_program_cases loc fxid style (typing_function, evdref) tycon env
     (predopt, tomatchl, eqns) =
   let typing_fun tycon env = function
     | Some t ->	typing_function tycon env evdref t
@@ -2314,6 +2352,7 @@ let compile_program_cases loc style (typing_function, evdref) tycon env
     { env      = env;
       evdref   = evdref;
       pred     = pred;
+      fxid     = fxid;
       tomatch  = initial_pushed;
       history  = start_history (List.length initial_pushed);
       mat      = matx;
@@ -2333,9 +2372,10 @@ let compile_program_cases loc style (typing_function, evdref) tycon env
 (**************************************************************************)
 (* Main entry of the matching compilation                                 *)
 
-let compile_cases loc style (typing_fun, evdref) tycon env (predopt, tomatchl, eqns) =
+let compile_cases loc fxid style (typing_fun, evdref) tycon env (predopt, tomatchl, eqns) =
+  let fxid = Option.map snd fxid in
   if predopt == None && Flags.is_program_mode () then
-    compile_program_cases loc style (typing_fun, evdref) 
+    compile_program_cases loc fxid style (typing_fun, evdref) 
       tycon env (predopt, tomatchl, eqns)
   else
       
@@ -2390,6 +2430,7 @@ let compile_cases loc style (typing_fun, evdref) tycon env (predopt, tomatchl, e
       { env       = env;
         evdref    = myevdref;
 	pred      = pred;
+	fxid      =fxid;
 	tomatch   = initial_pushed;
 	history   = start_history (List.length initial_pushed);
 	mat       = matx;

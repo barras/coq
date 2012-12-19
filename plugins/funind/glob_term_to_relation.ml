@@ -285,7 +285,7 @@ let make_discr_match_brl i =
 *)
 let make_discr_match brl =
   fun el i ->
-  mkGCases(None,
+  mkGCases(None,None,
 	   make_discr_match_el el,
 	   make_discr_match_brl i brl)
 
@@ -607,7 +607,7 @@ let rec build_entry_lc env funnames avoid rt  : glob_constr build_entry_return =
 	in
 	let b_res = build_entry_lc new_env funnames avoid b in
 	combine_results (combine_letin n) v_res b_res
-    | GCases(_,_,_,el,brl) ->
+    | GCases(_,_,_,_,el,brl) ->
 	(* we create the discrimination function
 	   and treat the case itself
 	*)
@@ -632,7 +632,7 @@ let rec build_entry_lc env funnames avoid rt  : glob_constr build_entry_return =
 	    [lhs;rhs]
 	in
 	let match_expr =
-	  mkGCases(None,[(b,(Anonymous,None))],brl)
+	  mkGCases(None,None,[(b,(Anonymous,None))],brl)
 	in
 	(* 		Pp.msgnl (str "new case := " ++ Printer.pr_glob_constr match_expr); *)
 	build_entry_lc env funnames avoid match_expr
@@ -660,7 +660,7 @@ let rec build_entry_lc env funnames avoid rt  : glob_constr build_entry_return =
 	  let br =
 	    (Loc.ghost,[],[case_pats.(0)],e)
 	  in
-	  let match_expr = mkGCases(None,[b,(Anonymous,None)],[br]) in
+	  let match_expr = mkGCases(None,None,[b,(Anonymous,None)],[br]) in
 	  build_entry_lc env funnames avoid match_expr
 
 	end

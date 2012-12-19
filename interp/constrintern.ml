@@ -1408,7 +1408,7 @@ let internalize sigma globalenv env allow_patvar lvar c =
 		let app = CAppExpl (loc, (None, constrname), List.rev_append pars args) in
 	  intern env app
 	end
-    | CCases (loc, sty, rtnpo, tms, eqns) ->
+    | CCases (loc, fxid, sty, rtnpo, tms, eqns) ->
       let as_in_vars = List.fold_left (fun acc (_,(na,inb)) ->
 	Option.fold_left (fun x tt -> List.fold_right Idset.add (ids_of_cases_indtype tt) x)
 	  (Option.fold_left (fun x (_,y) -> match y with | Name y' -> Idset.add y' x |_ -> x) acc na)
@@ -1433,15 +1433,15 @@ let internalize sigma globalenv env allow_patvar lvar c =
 	  | [] -> Option.map (intern_type env') rtnpo (* Only PatVar in "in" clauses *)
 	  | l -> let thevars,thepats=List.split l in
 		 Some (
-		   GCases(Loc.ghost,Term.RegularStyle,Some (GSort (Loc.ghost,GType None)), (* "return Type" *)
+		   GCases(Loc.ghost,fxid,Term.RegularStyle,Some (GSort (Loc.ghost,GType None)), (* "return Type" *)
 			  List.map (fun id -> GVar (Loc.ghost,id),(Name id,None)) thevars, (* "match v1,..,vn" *)
 			  [Loc.ghost,[],thepats, (* "|p1,..,pn" *)
 			   Option.cata (intern_type env') (GHole(Loc.ghost,Evar_kinds.CasesType)) rtnpo; (* "=> P" is there were a P "=> _" else *)
 			   Loc.ghost,[],List.make (List.length thepats) (PatVar(Loc.ghost,Anonymous)), (* "|_,..,_" *)
 			   GHole(Loc.ghost,Evar_kinds.ImpossibleCase) (* "=> _" *)]))
 	in
-        let eqns' = List.map (intern_eqn (List.length tms) env) eqns in
-	GCases (loc, sty, rtnpo, tms, List.flatten eqns')
+        let eqns' = List.map (intern_eqn (List.length tms) env fxid) eqns in
+	GCases (loc, fxid, sty, rtnpo, tms, List.flatten eqns')
     | CLetTuple (loc, nal, (na,po), b, c) ->
 	let env' = reset_tmp_scope env in
 	(* "in" is None so no match to add *)
@@ -1497,11 +1497,12 @@ let internalize sigma globalenv env allow_patvar lvar c =
     (ids,List.flatten mpl')
 
   (* Expands a pattern-matching clause [lhs => rhs] *)
-  and intern_eqn n env (loc,lhs,rhs) =
+  and intern_eqn n env fxid (loc,lhs,rhs) =
     let eqn_ids,pll = intern_disjunctive_multiple_pattern env loc n lhs in
     (* Linearity implies the order in ids is irrelevant *)
     check_linearity lhs eqn_ids;
-    let env_ids = List.fold_right Idset.add eqn_ids env.ids in
+    let env_ids = List.fold_right Idset.add eqn_ids
+      (Option.fold_right (fun (_,id) -> Idset.add id) fxid env.ids) in
     List.map (fun (asubst,pl) ->
       let rhs = replace_vars_constr_expr asubst rhs in
       List.iter message_redundant_alias asubst;

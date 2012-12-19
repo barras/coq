@@ -51,7 +51,7 @@ let constr_loc = function
   | CAppExpl (loc,_,_) -> loc
   | CApp (loc,_,_) -> loc
   | CRecord (loc,_,_) -> loc
-  | CCases (loc,_,_,_,_) -> loc
+  | CCases (loc,_,_,_,_,_) -> loc
   | CLetTuple (loc,_,_,_,_) -> loc
   | CIf (loc,_,_,_,_) -> loc
   | CHole (loc, _) -> loc

@@ -100,35 +100,53 @@ let mis_nf_constructor_type (ind,mib,mip) j =
 let mis_constr_nargs indsp =
   let (mib,mip) = Global.lookup_inductive indsp in
   let recargs = dest_subterms mip.mind_recargs in
-  Array.map List.length recargs
+  let precargs = dest_subterms mip.mind_precargs in
+  Array.map List.length recargs,
+  Array.map List.length precargs
 
 let mis_constr_nargs_env env (kn,i) =
   let mib = Environ.lookup_mind kn env in
   let mip = mib.mind_packets.(i) in
   let recargs = dest_subterms mip.mind_recargs in
-  Array.map List.length recargs
+  let precargs = dest_subterms mip.mind_precargs in
+  Array.map List.length recargs,
+  Array.map List.length precargs
 
 (* Arity of constructors excluding local defs *)
 
 let mis_constructor_nargs (indsp,j) =
   let (mib,mip) = Global.lookup_inductive indsp in
-  recarg_length mip.mind_recargs j + mib.mind_nparams
+  if j <= Array.length mip.mind_consnames then
+    recarg_length mip.mind_recargs j + mib.mind_nparams
+  else
+    recarg_length mip.mind_precargs (j-Array.length mip.mind_consnames)
+    + mib.mind_nparams
 
 let mis_constructor_nargs_env env ((kn,i),j) =
   let mib = Environ.lookup_mind kn env in
   let mip = mib.mind_packets.(i) in
-  recarg_length mip.mind_recargs j + mib.mind_nparams
+  if j <= Array.length mip.mind_consnames then
+    recarg_length mip.mind_recargs j + mib.mind_nparams
+  else
+    recarg_length mip.mind_precargs (j-Array.length mip.mind_consnames)
+    + mib.mind_nparams
 
 (* Arity of constructors with arg and defs *)
 
 let mis_constructor_nhyps (indsp,j) =
   let (mib,mip) = Global.lookup_inductive indsp in
-   mip.mind_consnrealdecls.(j-1) + rel_context_length (mib.mind_params_ctxt)
+  if j <= Array.length mip.mind_consnames then
+    mip.mind_consnrealdecls.(j-1) + rel_context_length (mib.mind_params_ctxt)
+  else
+    mip.mind_pconsnrealdecls.(j-1-Array.length mip.mind_consnames) + rel_context_length (mib.mind_params_ctxt)
 
 let mis_constructor_nhyps_env env ((kn,i),j) =
   let mib = Environ.lookup_mind kn env in
   let mip = mib.mind_packets.(i) in
-   mip.mind_consnrealdecls.(j-1) + rel_context_length (mib.mind_params_ctxt)
+  if j <= Array.length mip.mind_consnames then
+    mip.mind_consnrealdecls.(j-1) + rel_context_length (mib.mind_params_ctxt)
+  else
+    mip.mind_pconsnrealdecls.(j-1-Array.length mip.mind_consnames) + rel_context_length (mib.mind_params_ctxt)
 
 let constructor_nrealargs env (ind,j) =
   let (_,mip) = Inductive.lookup_mind_specif env ind in
@@ -396,6 +414,13 @@ let build_path_branch_type ~recu env dep pj cs br =
   let ind = fst cs.cs1_cstr in
   let (_,mip as specif) = Inductive.lookup_mind_specif env ind in
   Inductive.build_path_branch_type ~recu ind specif (Array.of_list cs.cs1_params) pj dep br
+    (snd cs.cs1_cstr-Array.length mip.mind_consnames,
+     {c1_name=id_of_string"_";c1_args=cs.cs1_args;c1_args_info=cs.cs1_args_info;
+      c1_inst=cs.cs1_inst;c1_lhs=cs.cs1_lhs;c1_rhs=cs.cs1_rhs})
+let build_path_rec_branch_type env dep pj cs br =
+  let ind = fst cs.cs1_cstr in
+  let (_,mip as specif) = Inductive.lookup_mind_specif env ind in
+  Inductive.build_path_rec_branch_type ind specif (Array.of_list cs.cs1_params) pj dep br
     (snd cs.cs1_cstr-Array.length mip.mind_consnames,
      {c1_name=id_of_string"_";c1_args=cs.cs1_args;c1_args_info=cs.cs1_args_info;
       c1_inst=cs.cs1_inst;c1_lhs=cs.cs1_lhs;c1_rhs=cs.cs1_rhs})

@@ -1,13 +1,22 @@
 Definition U := Type.
+Axiom magic:forall T,T.
+
 
 Inductive circle : U :=
   base
 with paths :=
   loop : base=base.
 
+Definition test_match_circle (c:circle) : nat :=
+  fixmatch{h} c with
+  | base => 0
+  | loop => magic _ h
+  end.
+
+
+
 Print circle.
 
-Axiom magic:forall T,T.
 Eval compute in (fun P f => circle_rect P f (magic _) base).
 Eval compute in (fun P f c => circle_rect P f (magic _) c).
 
@@ -45,12 +54,20 @@ Print isInhab1_rect.
 
 
 (*Unset Elimination Schemes.*)
-Inductive isInhab2 (X:Type) : Type :=
+(*Inductive isInhab2 (X:Type) : Type :=
     | proj2 (x: X): isInhab2 X
 with paths :=
-    | contr2 (n:nat)(m:=0)(y y' : nat->isInhab2 X) (a:=0)(b:=0) : (y n)=(y' 1).
+    | contr2 (n:nat)(m:=0)(y y' : forall p:nat,n=p->isInhab2 X) (a:=0)(b:=0) : (y n eq_refl)=(y' 1 (magic _)).
 Print isInhab2_rect. (* buggy eta expansion of branches *)
 Notation "e @ x" := (eq_rect _ _ x _ e) (at level 60, right associativity).
+*)
+
+Inductive isInhab3 (X:Type)(f:X->X) : X->X->Type :=
+    | proj3 (x: X): isInhab3 X f x x
+with paths :=
+    | contr3  (n:nat)(x x':X) (y y' : isInhab3 X f (f x') x) : y=y'.
+Print isInhab3_rect.
+
 
 Inductive isInhab (X:Type)(f:X->X) : X->X->Type :=
     | proj (x: X): isInhab X f x x
@@ -166,6 +183,10 @@ with paths := loop2_ (m:nat) : (base2 m) = (base2 m).
 (*
 Drop.
 #use"include";;
+#trace build_induction_scheme;;
+#trace Inductive.build_path_rec_branch_type;;
+
+
 #trace check_inductive;;
 #trace get_constructors;;
 #trace build_induction_scheme;;

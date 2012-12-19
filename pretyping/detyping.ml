@@ -48,14 +48,14 @@ let isomorphic_to_tuple lc = Int.equal (Array.length lc) 1
 
 let encode_bool r =
   let (x,lc) = encode_inductive r in
-  if not (has_two_constructors lc) then
+  if not (has_two_constructors (fst lc) && Array.length (snd lc)=0) then
     user_err_loc (loc_of_reference r,"encode_if",
       str "This type has not exactly two constructors.");
   x
 
 let encode_tuple r =
   let (x,lc) = encode_inductive r in
-  if not (isomorphic_to_tuple lc) then
+  if not (isomorphic_to_tuple (fst lc) && Array.length (snd lc)=0) then
     user_err_loc (loc_of_reference r,"encode_tuple",
       str "This type cannot be seen as a tuple type.");
   x
@@ -311,6 +311,10 @@ let detype_case computable detype detype_eqns testdep avoid data p c bl =
   let (indsp,st,consnargsl,pconsnargsl,k) = data in
   let synth_type = synthetize_type () in
   let tomatch = detype c in
+  let fxid =
+    if Array.length pconsnargsl > 0 then
+      Some (dl, id_of_string "h") (* TODO: find the name given by the user! *)
+    else None in
   let alias, aliastyp, pred=
     if (not !Flags.raw_print) && synth_type && computable && not (Int.equal (Array.length bl) 0)
     then
@@ -358,10 +362,10 @@ let detype_case computable detype detype_eqns testdep avoid data p c bl =
              Option.get nondepbrs.(0),Option.get nondepbrs.(1))
       else
 	let eqnl = detype_eqns constructs consnargsl pconsnargsl bl in
-	GCases (dl,tag,pred,[tomatch,(alias,aliastyp)],eqnl)
+	GCases (dl,None,tag,pred,[tomatch,(alias,aliastyp)],eqnl)
   | _ ->
       let eqnl = detype_eqns constructs consnargsl pconsnargsl bl in
-      GCases (dl,tag,pred,[tomatch,(alias,aliastyp)],eqnl)
+      GCases (dl,fxid,tag,pred,[tomatch,(alias,aliastyp)],eqnl)
 
 let detype_sort = function
   | Prop Null -> GProp
@@ -618,7 +622,7 @@ let rec subst_glob_constr subst raw =
 	if r1' == r1 && r2' == r2 then raw else
 	  GLetIn (loc,n,r1',r2')
 
-  | GCases (loc,sty,rtno,rl,branches) ->
+  | GCases (loc,fxid,sty,rtno,rl,branches) ->
       let rtno' = Option.smartmap (subst_glob_constr subst) rtno
       and rl' = List.smartmap (fun (a,x as y) ->
         let a' = subst_glob_constr subst a in
@@ -638,7 +642,7 @@ let rec subst_glob_constr subst raw =
 			branches
       in
 	if rtno' == rtno && rl' == rl && branches' == branches then raw else
-	  GCases (loc,sty,rtno',rl',branches')
+	  GCases (loc,fxid,sty,rtno',rl',branches')
 
   | GLetTuple (loc,nal,(na,po),b,c) ->
       let po' = Option.smartmap (subst_glob_constr subst) po

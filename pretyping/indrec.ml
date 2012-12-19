@@ -77,27 +77,16 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
 
   let build_path_branch env k =
     let k' = k-nc in
-    let cs = pconstrs.(k') in
+    let cs = lift_path_constructor k pconstrs.(k') in
     let br0 = Termops.rel_vect k' nc in
-(*    let rec process_branch_type (posn,brsub,prctxt) ty =
-      if posn < Array.length cs.cs1_args_info
-      match kind_of_term ty with
-
-      match cs.cs1_args_info.(posn) with
-	  None -> (posn+1,Esubst.subs_lift brsub,
-		   map_rel_declaration (exsubst brsub) d::prctxt)
-	| Some(ctxt,ainst) ->
-	  warning ("Recursive argument of 1-constructor: dropped rec call.");
-	  (posn+1,Esubst.subs_shft(1,Esubst.subs_lift brsub),
-	   (Name(id_of_string"h"),None,mkSet)::map_rel_declaration (exsubst brsub) d::prctxt) in*)
-    let t = build_path_branch_type ~recu:true env dep (mkRel (1+k))
-      (lift_path_constructor k cs) br0 in
-(*    let (_,hty,t) = destProd t in
-    let (_,brsub,prctxt) = 
-
-    let (brhyps,brty) = decompose_prod_assum t in
-    let ty = process_path_branch*)
-    (t,mkRel(nargstotal-k)) in
+    let (t,brsub) = build_path_rec_branch_type env dep (mkRel (1+k)) cs br0 in
+    let brsub = lift (nargstotal-k) brsub in
+    let (hyps,inst) = decompose_lam_assum brsub in
+    let inst = if isApp inst then snd(destApp inst) else [||] in
+    let br =
+      let hd = mkApp(mkRel(nargstotal-k+Array.length cs.cs1_args_info+1),inst) in
+      it_mkLambda_or_LetIn hd hyps in
+    (t,br) in
 
   (* in env: params, P, previous branches types (k) *)
   let rec add_branch env k br =
@@ -449,7 +438,7 @@ let mis_make_indrec env sigma listdepkind mib =
 	      let j' = j-nconstr0 in
 	      let cs = pconstrs.(j') in
 	      let br = Termops.rel_vect j' nconstr0 in
-	      let t = lift j' (build_path_branch_type ~recu:true env dep (mkRel (i+1)) cs br) in
+	      let t = lift j' (fst(build_path_rec_branch_type env dep (mkRel (i+1)) cs br)) in
 	      mkLambda_string "g" t
 		(onerec (push_rel (Anonymous, None, t) env) (j+1))
 	    else

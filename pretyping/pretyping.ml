@@ -628,8 +628,8 @@ let rec pretype (tycon : type_constraint) env evdref lvar = function
 	in
 	  { uj_val = v; uj_type = p }
 
-  | GCases (loc,sty,po,tml,eqns) ->
-      Cases.compile_cases loc sty
+  | GCases (loc,fxid,sty,po,tml,eqns) ->
+      Cases.compile_cases loc fxid sty
 	((fun vtyc env evdref -> pretype vtyc env evdref lvar),evdref)
 	tycon env (* loc *) (po,tml,eqns)
 

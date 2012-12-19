@@ -917,7 +917,7 @@ let descend_in_conjunctions tac exit c gl =
     let sign,ccl = decompose_prod_assum t in
     match match_with_tuple ccl with
     | Some (_,_,isrec) ->
-	let n = (mis_constr_nargs ind).(0) in
+	let n = (fst (mis_constr_nargs ind)).(0) in
 	let sort = elimination_sort_of_goal gl in
 	let id = fresh_id [] (id_of_string "H") gl in
 	let IndType (indf,_) = pf_apply find_rectype gl ccl in
@@ -1294,7 +1294,7 @@ let error_unexpected_extra_pattern loc nb pat =
 let intro_or_and_pattern loc b ll l' tac id gl =
     let c = mkVar id in
     let ind,_ = pf_reduce_to_quantified_ind gl (pf_type_of gl c) in
-    let nv = mis_constr_nargs ind in
+    let (nv,nv1) = mis_constr_nargs ind in (* HIT: forgot 1-constructors... *)
     let bracketed = b || not (List.is_empty l') in
     let rec adjust_names_length nb n = function
       | [] when Int.equal n 0 or not bracketed -> []

@@ -76,7 +76,11 @@ val build_path_branch_type :
   recu:bool ->
   inductive -> mutual_inductive_body * one_inductive_body ->
   constr array -> constr -> bool -> constr array ->
-  (int * path_constructor) -> constr
+  (int * path_constructor) -> types
+val build_path_rec_branch_type :
+  inductive -> mutual_inductive_body * one_inductive_body ->
+  constr array -> constr -> bool -> constr array ->
+  (int * path_constructor) -> types * constr
 
 
 (** Return the arity of an inductive type *)

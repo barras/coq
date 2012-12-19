@@ -117,13 +117,14 @@ let fold_constr_expr_with_binders g f n acc = function
   | CHole _ | CEvar _ | CPatVar _ | CSort _ | CPrim _ | CRef _ ->
       acc
   | CRecord (loc,_,l) -> List.fold_left (fun acc (id, c) -> f n acc c) acc l
-  | CCases (loc,sty,rtnpo,al,bl) ->
+  | CCases (loc,fxid,sty,rtnpo,al,bl) ->
       let ids = ids_of_cases_tomatch al in
       let acc = Option.fold_left (f (List.fold_right g ids n)) acc rtnpo in
       let acc = List.fold_left (f n) acc (List.map fst al) in
+      let n_br = Option.fold_right (fun (_,id) n -> g id n) fxid n in
       List.fold_right (fun (loc,patl,rhs) acc ->
 	let ids = ids_of_pattern_list patl in
-	f (Idset.fold g ids n) acc rhs) bl acc
+	f (Idset.fold g ids n_br) acc rhs) bl acc
   | CLetTuple (loc,nal,(ona,po),b,c) ->
       let n' = List.fold_right (Loc.down_located (name_fold g)) nal n in
       f (Option.fold_right (Loc.down_located (name_fold g)) ona n') (f n acc b) c
@@ -219,12 +220,13 @@ let map_constr_expr_with_binders g f e = function
   | CHole _ | CEvar _ | CPatVar _ | CSort _
   | CPrim _ | CRef _ as x -> x
   | CRecord (loc,p,l) -> CRecord (loc,p,List.map (fun (id, c) -> (id, f e c)) l)
-  | CCases (loc,sty,rtnpo,a,bl) ->
+  | CCases (loc,fxid,sty,rtnpo,a,bl) ->
       (* TODO: apply g on the binding variables in pat... *)
       let bl = List.map (fun (loc,pat,rhs) -> (loc,pat,f e rhs)) bl in
       let ids = ids_of_cases_tomatch a in
       let po = Option.map (f (List.fold_right g ids e)) rtnpo in
-      CCases (loc, sty, po, List.map (fun (tm,x) -> (f e tm,x)) a,bl)
+      let e' = Option.fold_right (fun (_,id) -> g id) fxid e in
+      CCases (loc, fxid, sty, po, List.map (fun (tm,x) -> (f e' tm,x)) a,bl)
   | CLetTuple (loc,nal,(ona,po),b,c) ->
       let e' = List.fold_right (Loc.down_located (name_fold g)) nal e in
       let e'' = Option.fold_right (Loc.down_located (name_fold g)) ona e in

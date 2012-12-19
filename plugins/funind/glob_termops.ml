@@ -19,7 +19,8 @@ let mkGApp(rt,rtl) = GApp(Loc.ghost,rt,rtl)
 let mkGLambda(n,t,b) = GLambda(Loc.ghost,n,Explicit,t,b)
 let mkGProd(n,t,b) = GProd(Loc.ghost,n,Explicit,t,b)
 let mkGLetIn(n,t,b) = GLetIn(Loc.ghost,n,t,b)
-let mkGCases(rto,l,brl) = GCases(Loc.ghost,Term.RegularStyle,rto,l,brl)
+let mkGCases(fxid,rto,l,brl) =
+  GCases(Loc.ghost,Option.map(fun id->(Loc.ghost,id))fxid,Term.RegularStyle,rto,l,brl)
 let mkGSort s = GSort(Loc.ghost,s)
 let mkGHole () = GHole(Loc.ghost,Evar_kinds.BinderType Anonymous)
 let mkGCast(b,t) = GCast(Loc.ghost,b,CastConv t)
@@ -167,8 +168,8 @@ let change_vars =
 		    change_vars mapping b,
 		    change_vars new_mapping e
 		   )
-      | GCases(loc,sty,infos,el,brl) ->
-	  GCases(loc,sty,
+      | GCases(loc,fxid,sty,infos,el,brl) ->
+	  GCases(loc,fxid,sty,
 		 infos,
 		 List.map (fun (e,x) -> (change_vars mapping e,x)) el,
 		 List.map (change_vars_br mapping) brl
@@ -348,11 +349,11 @@ let rec alpha_rt excluded rt =
 	let new_b = alpha_rt new_excluded new_b in
 	let new_rto = Option.map (alpha_rt new_excluded) new_rto  in
 	GLetTuple(loc,new_nal,(na,new_rto),new_t,new_b)
-    | GCases(loc,sty,infos,el,brl) ->
+    | GCases(loc,fxid,sty,infos,el,brl) ->
 	let new_el =
 	  List.map (function (rt,i) -> alpha_rt excluded rt, i) el
 	in
-	GCases(loc,sty,infos,new_el,List.map (alpha_br excluded) brl)
+	GCases(loc,fxid,sty,infos,new_el,List.map (alpha_br excluded) brl)
     | GIf(loc,b,(na,e_o),lhs,rhs) ->
 	GIf(loc,alpha_rt excluded b,
 	    (na,Option.map (alpha_rt excluded) e_o),
@@ -398,9 +399,9 @@ let is_free_in id =
 	    | _ -> true
 	in
 	is_free_in t || (check_in_b && is_free_in b)
-    | GCases(_,_,_,el,brl) ->
+    | GCases(_,fxid,_,_,el,brl) ->
 	(List.exists (fun (e,_) -> is_free_in e) el) ||
-	  List.exists is_free_in_br brl
+	  (not (match fxid with Some (_,id') -> id=id' | _->false)) || List.exists is_free_in_br brl
     | GLetTuple(_,nal,_,b,t) ->
 	let check_in_nal =
 	  not (List.exists (function Name id' -> id'= id | _ -> false) nal)
@@ -493,8 +494,8 @@ let replace_var_by_term x_id term =
 		    replace_var_by_pattern def,
 		    replace_var_by_pattern b
 		   )
-      | GCases(loc,sty,infos,el,brl) ->
-	  GCases(loc,sty,
+      | GCases(loc,fxid,sty,infos,el,brl) ->
+	  GCases(loc,fxid,sty,
 		 infos,
 		 List.map (fun (e,x) -> (replace_var_by_pattern e,x)) el,
 		 List.map replace_var_by_pattern_br brl
@@ -598,7 +599,7 @@ let ids_of_glob_constr c =
       | GIf (loc,c,(na,po),b1,b2) -> ids_of_glob_constr [] c @ ids_of_glob_constr [] b1 @ ids_of_glob_constr [] b2 @ acc
       | GLetTuple (_,nal,(na,po),b,c) ->
           List.map idof nal @ ids_of_glob_constr [] b @ ids_of_glob_constr [] c @ acc
-      | GCases (loc,sty,rtntypopt,tml,brchl) ->
+      | GCases (loc,sfxid,ty,rtntypopt,tml,brchl) ->
 	  List.flatten (List.map (fun (_,idl,patl,c) -> idl @ ids_of_glob_constr [] c) brchl)
       | GRec _ -> failwith "Fix inside a constructor branch"
       | (GSort _ | GHole _ | GRef _ | GEvar _ | GPatVar _) -> []
@@ -646,8 +647,8 @@ let zeta_normalize =
 		    zeta_normalize_term def,
 		    zeta_normalize_term b
 		   )
-      | GCases(loc,sty,infos,el,brl) ->
-	  GCases(loc,sty,
+      | GCases(loc,fxid,sty,infos,el,brl) ->
+	  GCases(loc,fxid,sty,
 		 infos,
 		 List.map (fun (e,x) -> (zeta_normalize_term e,x)) el,
 		 List.map zeta_normalize_br brl
@@ -704,8 +705,8 @@ let expand_as =
       | GCast(loc,b,c) ->
 	  GCast(loc,expand_as map b,
 		Miscops.map_cast_type (expand_as map) c)
-      | GCases(loc,sty,po,el,brl) ->
-	  GCases(loc, sty, Option.map (expand_as map) po, List.map (fun (rt,t) -> expand_as map rt,t) el,
+      | GCases(loc,fxid,sty,po,el,brl) ->
+	  GCases(loc, fxid,sty, Option.map (expand_as map) po, List.map (fun (rt,t) -> expand_as map rt,t) el,
 		List.map (expand_as_br map) brl)
   and expand_as_br map (loc,idl,cpl,rt) =
     (loc,idl,cpl, expand_as (List.fold_left add_as map cpl) rt)

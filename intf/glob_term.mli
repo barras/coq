@@ -36,7 +36,8 @@ type glob_constr =
   | GLambda of Loc.t * name * binding_kind *  glob_constr * glob_constr
   | GProd of Loc.t * name * binding_kind * glob_constr * glob_constr
   | GLetIn of Loc.t * name * glob_constr * glob_constr
-  | GCases of Loc.t * case_style * glob_constr option * tomatch_tuples * cases_clauses
+  | GCases of Loc.t * (Loc.t * identifier) option * case_style *
+      glob_constr option * tomatch_tuples * cases_clauses
       (** [GCases(l,style,r,tur,cc)] = "match 'tur' return 'r' with 'cc'" (in
 	  [MatchStyle]) *)
 

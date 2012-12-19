@@ -57,8 +57,8 @@ val mis_nf_constructor_type :
 Functions without env lookup in the globalenv. *)
 
 (** Arity of constructors excluding parameters and local defs *)
-val mis_constr_nargs : inductive -> int array
-val mis_constr_nargs_env : env -> inductive -> int array
+val mis_constr_nargs : inductive -> int array * int array
+val mis_constr_nargs_env : env -> inductive -> int array * int array
 
 val nconstructors : inductive -> int
 val npconstructors : inductive -> int
@@ -131,6 +131,9 @@ val make_arity : env -> bool -> inductive_family -> sorts -> types
 val build_branch_type : env -> bool -> constr -> point_constructor_summary -> types
 val build_path_branch_type :
   recu:bool -> env -> bool -> constr -> path_constructor_summary -> constr array -> types
+val build_path_rec_branch_type :
+  env -> bool -> constr -> path_constructor_summary -> constr array ->
+  types * constr
 
 (** Raise [Not_found] if not given an valid inductive type *)
 val extract_mrectype : constr -> inductive * constr list

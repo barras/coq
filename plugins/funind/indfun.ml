@@ -205,7 +205,7 @@ let is_rec names =
 	  )
 	  b
     | GApp(_,f,args) -> List.exists (lookup names) (f::args)
-    | GCases(_,_,_,el,brl) ->
+    | GCases(_,_,_,_,el,brl) ->
 	List.exists (fun (e,_) -> lookup names e) el ||
 	  List.exists (lookup_br names) brl
   and lookup_br names (_,idl,_,rt) =
@@ -662,8 +662,8 @@ let rec add_args id new_args b =
   | CApp(loc,(pf,b),bl) ->
       CApp(loc,(pf,add_args id new_args b),
 	   List.map (fun (e,o) -> add_args id new_args e,o) bl)
-  | CCases(loc,sty,b_option,cel,cal) ->
-      CCases(loc,sty,Option.map (add_args id new_args) b_option,
+  | CCases(loc,fxid,sty,b_option,cel,cal) ->
+      CCases(loc,fxid,sty,Option.map (add_args id new_args) b_option,
 	     List.map (fun (b,(na,b_option)) ->
 			 add_args id new_args b,
 			 (na, b_option)) cel,

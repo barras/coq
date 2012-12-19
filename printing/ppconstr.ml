@@ -492,7 +492,7 @@ let pr pr sep inherited a =
 		(fun (id, c) -> h 1 (pr_reference id ++ spc () ++ str":=" ++ pr spc ltop c)) l
 	      ++ str" |}"), latom
 
-  | CCases (_,LetPatternStyle,rtntypopt,[c,asin],[(_,[(loc,[p])],b)]) ->
+  | CCases (_,None,LetPatternStyle,rtntypopt,[c,asin],[(_,[(loc,[p])],b)]) ->
       hv 0 (
 	str "let '" ++
 	  hov 0 (pr_patt ltop p ++
@@ -501,9 +501,19 @@ let pr pr sep inherited a =
 		 pr_case_type (pr_dangling_with_for mt pr) rtntypopt ++
 		 str " in" ++ pr spc ltop b)),
 	lletpattern
-  | CCases(_,_,rtntypopt,c,eqns) ->
+  | CCases(_,None,_,rtntypopt,c,eqns) ->
       v 0
         (hv 0 (str "match" ++ brk (1,2) ++
+		  hov 0 (
+		    prlist_with_sep sep_v
+		      (pr_case_item (pr_dangling_with_for mt pr)) c
+		    ++ pr_case_type (pr_dangling_with_for mt pr) rtntypopt) ++
+		  spc () ++ str "with") ++
+		  prlist (pr_eqn (pr mt)) eqns ++ spc() ++ str "end"),
+      latom
+  | CCases(_,Some (_,id),_,rtntypopt,c,eqns) ->
+      v 0
+        (hv 0 (str "fixmatch {" ++ pr_id id ++ str"}" ++ brk (1,2) ++
 		  hov 0 (
 		    prlist_with_sep sep_v
 		      (pr_case_item (pr_dangling_with_for mt pr)) c
