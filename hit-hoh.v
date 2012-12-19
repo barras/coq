@@ -7,12 +7,13 @@ Inductive circle : U :=
 with paths :=
   loop : base=base.
 
+(*
 Definition test_match_circle (c:circle) : nat :=
   fixmatch{h} c with
   | base => 0
   | loop => magic _ h
   end.
-
+*)
 
 
 Print circle.
