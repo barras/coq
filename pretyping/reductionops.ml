@@ -304,7 +304,7 @@ let rec whd_state_gen flags env sigma =
       | Construct (ind,c) ->
 	if Closure.RedFlags.red_set flags Closure.RedFlags.fIOTA then
 	  match strip_app stack with
-	  |args, (Zcase(ci, _, lf)::s') ->
+	  |args, (Zcase(ci, _, lf)::s') when eq_ind ind ci.ci_ind ->
 	    whrec (lf.(c-1), append_stack_app_list (List.skipn ci.ci_npar args) s')
 	  |args, (Zfix (f,s')::s'') ->
 	    let x' = applist(x,args) in
@@ -372,7 +372,7 @@ let local_whd_state_gen flags sigma =
       | Construct (ind,c) ->
 	if Closure.RedFlags.red_set flags Closure.RedFlags.fIOTA then
 	  match strip_app stack with
-	  |args, (Zcase(ci, _, lf)::s') ->
+	  |args, (Zcase(ci, _, lf)::s') when eq_ind ind ci.ci_ind ->
 	    whrec (lf.(c-1), append_stack_app_list (List.skipn ci.ci_npar args) s')
 	  |args, (Zfix (f,s')::s'') ->
 	    let x' = applist(x,args) in
