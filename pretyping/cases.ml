@@ -726,9 +726,17 @@ let push_rels_eqn sign eqn =
   {eqn with
      rhs = {eqn.rhs with rhs_env = push_rel_context sign eqn.rhs.rhs_env} }
 
-let push_rels_eqn_with_names sign eqn =
-  let subpats = List.rev (List.firstn (List.length sign) eqn.patterns) in
+let push_rels_eqn_with_names fx_id sign eqn =
+  let npatv =
+    match fx_id with
+      None ->  List.length sign
+    | Some _ -> List.length sign - 1 in
+  let subpats = List.rev (List.firstn npatv eqn.patterns) in
   let subpatnames = List.map alias_of_pat subpats in
+  let subpatnames =
+    match fx_id with
+      None -> subpatnames
+    | Some id -> subpatnames@[Name id] in
   let sign = recover_initial_subpattern_names subpatnames sign in
   push_rels_eqn sign eqn
 
@@ -974,7 +982,7 @@ let adjust_impossible_cases pb pred tomatch submat =
 (*   with .. end                                                             *)
 (*                                                                           *)
 (*****************************************************************************)
-let specialize_predicate newtomatchs (names,depna) arsign cs tms ccl =
+let specialize_predicate_gen newtomatchs (names,depna) arsign tms ccl (v,n,inst) =
   (* Assume some gamma st: gamma |- PI [X,x:I(X)]. PI tms. ccl *)
   let nrealargs = List.length names in
   let l = match depna with Anonymous -> 0 | Name _ -> 1 in
@@ -982,17 +990,16 @@ let specialize_predicate newtomatchs (names,depna) arsign cs tms ccl =
   (* We adjust pred st: gamma, x1..xn |- PI [X,x:I(X)]. PI tms. ccl' *)
   (* so that x can later be instantiated by Ci(x1..xn) *)
   (* and X by the realargs for Ci *)
-  let n = cs.cs0_nargs in
   let ccl' = liftn_predicate n (k+1) ccl tms in
   (* We prepare the substitution of X and x:I(X) *)
   let realargsi =
     if not (Int.equal nrealargs 0) then
-      adjust_subst_to_rel_context arsign (Array.to_list cs.cs0_concl_realargs)
+      adjust_subst_to_rel_context arsign (Array.to_list inst)
     else
       [] in
   let copti = match depna with
   | Anonymous -> None
-  | Name _ -> Some (build_dependent_constructor cs)
+  | Name _ -> Some v
   in
   (* The substituends realargsi, copti are all defined in gamma, x1...xn *)
   (* We need _parallel_ bindings to get gamma, x1...xn |- PI tms. ccl'' *)
@@ -1003,6 +1010,12 @@ let specialize_predicate newtomatchs (names,depna) arsign cs tms ccl =
   let ccl''' = liftn_predicate n (n+1) ccl'' tms in
   (* We finally get gamma,x'1..x'n,x |- [X1;x1:I(X1)]..[Xn;xn:I(Xn)]pred'''*)
   snd (List.fold_left (expand_arg tms) (1,ccl''') newtomatchs)
+
+let specialize_predicate newtomatchs (names,depna) arsign cs tms ccl =
+  let c = build_dependent_constructor cs in
+  let nargs = cs.cs0_nargs in
+  let inst = cs.cs0_concl_realargs in
+  specialize_predicate_gen newtomatchs (names,depna) arsign tms ccl (c,nargs,inst)
 
 let find_predicate loc env evdref p current (IndType (indf,realargs)) dep tms =
   let pred = abstract_predicate env !evdref indf current realargs dep tms p in
@@ -1258,10 +1271,90 @@ let build_branch current realargs deps (realnames,curname) pb arsign eqns const_
       tomatch = tomatch;
       pred = pred;
       history = history;
-      mat = List.map (push_rels_eqn_with_names typs) submat }
+      mat = List.map (push_rels_eqn_with_names None typs) submat }
 
-let build_path_branch current realargs deps (realnames,curname) pb arsign eqns const_info =
-  let na = match pb.fxid with Some id -> Name id | None -> Anonymous in
+let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
+let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
+let tr_cst = mkConst(make_con logicp empty_dirpath (label_of_id(id_of_string"eq_rect")))
+let specialize_path_predicate newtomatchs (names,depna) arsign cs tms ccl br0 =
+  let hack_cs =
+    { cs0_cstr = cs.cs1_cstr;
+      cs0_params = cs.cs1_params;
+      cs0_nargs = cs.cs1_nargs(*+1*);
+      cs0_args = cs.cs1_args;
+(*	lift_rel_context 1 (cs.cs1_args)@[na,None,pb.pred];*)
+      cs0_concl_realargs = [||] (*?*)
+    } in
+  let rhsty = 
+    specialize_predicate_gen newtomatchs (names,depna) arsign tms (liftn 1 2 ccl)
+      (cs.cs1_rhs,cs.cs1_nargs,cs.cs1_inst) in
+  let ity = mkApp(mkApp(mkInd(fst cs.cs1_cstr),Array.of_list cs.cs1_params), cs.cs1_inst) in
+  let d = build_dependent_constructor hack_cs in
+  let ty = mkApp(ccl,cs.cs1_inst) in
+  let lhs' = cs.cs1_lhs in (* TODO *)
+  let rhs' = cs.cs1_rhs in
+  mkApp(eq_cst,[|rhsty;mkApp(tr_cst,[|ity;cs.cs1_lhs;ty;lhs';cs.cs1_rhs;d|]);rhs'|])
+
+let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
+  let ity = build_dependent_inductive pb.env indf in
+  let pred = 
+    it_mkLambda_or_LetIn (mkLambda (curname,ity,pb.pred)) arsign in
+  let brty = Inductiveops.build_path_branch_type ~recu:false pb.env true pred const_info brs in
+  let hna = match pb.fxid with Some id -> Name id | None -> Anonymous in
+  let (_,hty,brty) = destProd brty in
+  let (typs,pred) = decompose_prod_n_assum (List.length const_info.cs1_args) brty in
+
+  let fx_id = match pb.fxid with
+      None -> Some (id_of_string"_")
+    | na -> na in
+(*  let hty =
+    it_mkLambda_or_LetIn (mkLambda (curname,mkInd(fst const_info.cs1_cstr),pb.pred)) arsign in (* TODO:FIXME *)*)
+  let history =
+    push_history_pattern const_info.cs1_nargs const_info.cs1_cstr pb.history in
+  let cs_args = const_info.cs1_args in
+  let names,aliasname = get_names pb.env cs_args eqns in
+  let typs = List.map2 (fun (_,c,t) na -> (na,c,t)) typs names in
+  let htyps = typs@[(hna,None,hty)] in
+(*  let typs = List.map2 (fun (_,c,t) na -> (na,c,t)) cs_args names in
+  let htyps = lift_rel_context 1 typs@[(hna,None,hty)] in*)
+  let submat = List.map (fun (tms,_,eqn) -> prepend_pattern tms eqn) eqns in
+  let typs' =
+    List.map_i (fun i d -> (mkRel i,map_rel_declaration (lift (i+1)) d)) 1 typs in
+  let extenv = push_rel_context htyps pb.env in
+  let typs' =
+    List.map (fun (c,d) ->
+      (c,extract_inductive_data extenv !(pb.evdref) d,d)) typs' in
+(*  let dep_sign =
+    find_dependencies_signature
+      (dependencies_in_rhs const_info.cs1_nargs current pb.tomatch eqns)
+      (List.rev typs') in*)
+(*  let cirealargs = Array.to_list const_info.cs1_inst in*)
+  let tomatch = (*List.fold_right2 (fun par arg tomatch ->
+    match kind_of_term par with
+    | Rel i -> replace_tomatch (i+const_info.cs1_nargs) arg tomatch
+    | _ -> tomatch) (current::realargs) (ci::cirealargs)*)
+      (lift_tomatch_stack (const_info.cs1_nargs+1) pb.tomatch) in
+  let typs' =
+    List.map
+      (fun (tm,(tmtyp,_),(na,_,_)) ->
+	((tm,tmtyp),[],na))
+      typs' in
+(*  let pred =
+    specialize_path_predicate typs' (realnames,curname) arsign const_info tomatch pb.pred brs in*)
+  let pred = lift 2 pred in
+  let currents = List.map (fun x -> Pushed x) typs' in
+  let alias = NonDepAlias in
+  let tomatch = List.rev_append (alias :: currents) tomatch in
+  let submat = adjust_impossible_cases pb pred tomatch submat in
+  htyps,
+  { pb with
+      env = extenv;
+      tomatch = tomatch;
+      pred = pred;
+      history = history;
+      mat = List.map (push_rels_eqn_with_names fx_id htyps) submat }
+(*
+
   let hack_cs =
     { cs0_cstr = const_info.cs1_cstr;
       cs0_params = const_info.cs1_params;
@@ -1273,7 +1366,7 @@ let build_path_branch current realargs deps (realnames,curname) pb arsign eqns c
   (* We never know...*)
   let pb = {pb with env = push_rel(na,None,pb.pred)pb.env}in
   build_branch current realargs deps (realnames,curname) pb arsign eqns hack_cs
-
+*)
 (**********************************************************************
  INVARIANT:
 
@@ -1318,8 +1411,6 @@ and match_current pb tomatch =
 
 	  (* We compile branches *)
 	  let brvals = Array.map2 (compile_branch current realargs (names,dep) deps pb arsign) eqns cstrs in
-	  let pbrvals =
-	    Array.map2 (compile_path_branch current realargs (names,dep) deps pb arsign) peqns pcstrs in
 	  (* We build the (elementary) case analysis *)
           let depstocheck = current::binding_vars_of_inductive typ in
           let brvals,tomatch,pred,inst =
@@ -1327,8 +1418,11 @@ and match_current pb tomatch =
               brvals pb.tomatch pb.pred deps cstrs in
           let brvals = Array.map (fun (sign,body) ->
             it_mkLambda_or_LetIn body sign) brvals in
+          (* Now we compile the path constructors *)
+	  let pbrvals =
+	    Array.map2 (compile_path_branch indf (names,dep) pb arsign brvals) peqns pcstrs in
           let pbrvals = Array.map (fun (sign,body) ->
-            it_mkLambda_or_LetIn body sign) pbrvals in
+	    it_mkLambda_or_LetIn body sign) pbrvals in
 	  let (pred,typ) =
 	    find_predicate pb.caseloc pb.env pb.evdref
 	      pred current indt (names,dep) tomatch in
@@ -1360,8 +1454,8 @@ and compile_branch current realargs names deps pb arsign eqns cstr =
   let sign, pb = build_branch current realargs deps names pb arsign eqns cstr in
   sign, (compile pb).uj_val
 
-and compile_path_branch current realargs names deps pb arsign eqns cstr =
-  let sign, pb = build_path_branch current realargs deps names pb arsign eqns cstr in
+and compile_path_branch indf names pb arsign brs eqns cstr =
+  let sign, pb = build_path_branch indf names pb arsign eqns cstr brs in
   sign, (compile pb).uj_val
 
 (* Abstract over a declaration before continuing splitting *)

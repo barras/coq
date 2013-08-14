@@ -1,5 +1,31 @@
 Definition U := Type.
 Axiom magic:forall T,T.
+Notation "'transp' P e x" := (eq_rect _ P x _ e)
+  (at level 10, P at next level, e at next level, x at next level, no associativity).
+Lemma eq_rect_cst (A:Type) (x y:A) (e:x=y) (P:Type) (p:P) :
+  transp (fun _ => P) e p = p.
+case e; reflexivity.
+Qed.
+
+
+
+
+Inductive Circle : Type :=
+    | Base : nat->Circle
+with paths :=
+    | Loop n m : (Base n) = (Base m).
+
+Print Circle_rect.
+Set Printing All.
+Check
+fun (P : Circle -> Type)
+ (f : forall n, P (Base n))
+ (g : forall n m, transp P (Loop n m) (f n) = (f m)) (c : Circle) =>
+fixmatch {h'} c as c0 return (P c0) with
+| Base n => f n
+| Loop n m => g n m
+end.
+
 
 
 Inductive circle : U :=
@@ -7,13 +33,11 @@ Inductive circle : U :=
 with paths :=
   loop : base=base.
 
-(*
 Definition test_match_circle (c:circle) : nat :=
   fixmatch{h} c with
   | base => 0
-  | loop => magic _ h
+  | loop => magic _ h (* TODO: usage of h... *)
   end.
-*)
 
 
 Print circle.
@@ -82,6 +106,23 @@ Inductive Z2Z :=
 with paths :=
 | mod : ze = (su (su ze)).
 Check Z2Z_rect.
+
+Definition Z2Z_case' (P:Type) (f:P) (f0:Z2Z->P) (g:f = f0 (su ze)) (z:Z2Z) : P :=
+  Z2Z_rect (fun _ => P) f f0 (eq_trans (eq_rect_cst _ _ _ mod P f) g) z.
+
+Lemma eq2 P f f0 g : Z2Z_case' P f f0 g (su ze) = Z2Z_case' P f f0 g (su (su (su ze))).
+simpl.
+apply f_equal.
+exact mod.
+Defined.
+
+Fixpoint Z2Z_rect' (P:Type) (f:P) (f0:Z2Z->P->P) (g:f=f0 (su ze) (f0 ze f)) (z:Z2Z) : P :=
+  Z2Z_case' P f (fun z' => f0 z' (Z2Z_rect' P f f0 g z')) g z.
+rewrite mod.
+
+Fixpoint F (z:Z2Z) : nat :=
+  Z2Z_rect' nat 0 (fun z' => Z2Z_rect' nat 0 (fun z''
+
 (*
  forall (P : Z2Z -> Type) (f : P ze) (f0 : forall z : Z2Z, P (su z)),
        ((forall H : Z2Z, P H) -> mod @ f = f0 (su ze)) ->

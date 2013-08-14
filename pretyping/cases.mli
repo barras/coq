@@ -128,7 +128,37 @@ val build_branch :
            'c pattern_matching_problem ->
            Term.rel_context ->
            (Glob_term.cases_pattern list * Names.name * 'c equation) list ->
-           Inductiveops.point_constructor_summary ->
+           point_constructor_summary ->
            (Names.name * Term.constr option * Term.types) list *
            'c pattern_matching_problem
+val build_path_branch :
+           inductive_family ->
+           'b list * name ->
+           'c pattern_matching_problem ->
+           rel_context ->
+           (Glob_term.cases_pattern list * name * 'c equation) list ->
+           path_constructor_summary ->
+           constr array ->
+           (name * constr option * types) list *
+           'c pattern_matching_problem
+
+val specialize_predicate :
+  (('a * tomatch_type) * 'b * name) list ->
+  'c list * name ->
+  rel_context ->
+  point_constructor_summary ->
+  tomatch_status list -> constr -> constr
+
+val specialize_path_predicate :
+  (('a * tomatch_type) * 'b * name) list ->
+  'c list * name ->
+  rel_context ->
+  path_constructor_summary ->
+  tomatch_status list -> constr ->
+  constr array -> constr
+
+val match_current : 
+  'a pattern_matching_problem ->
+  (Term.constr * tomatch_type) * int list * Names.name ->
+  unsafe_judgment
 
