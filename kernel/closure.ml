@@ -792,6 +792,15 @@ let rec drop_parameters depth n argstk =
     | _ -> assert false
 	(* strip_update_shift_app only produces Zapp and Zshift items *)
 
+let rec arguments depth argstk =
+  match argstk with
+      Zapp args::s ->
+	Array.append (lift_fconstr_vect depth args) (arguments depth s)
+    | Zshift(k)::s -> arguments (depth-k) s
+    | [] -> [||]
+    | _ -> assert false
+	(* strip_update_shift_app only produces Zapp and Zshift items *)
+
 (* Iota reduction: expansion of a fixpoint.
  * Given a fixpoint and a substitution, returns the corresponding
  * fixpoint body, and the substitution in which it should be
@@ -857,6 +866,8 @@ and knht e t stk =
 (************************************************************************)
 
 (* Computes a weak head normal form from the result of knh. *)
+let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
+let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
 let rec knr info m stk =
   match m.term with
   | FLambda(n,tys,f,e) when red_set info.i_flags fBETA ->
@@ -877,10 +888,26 @@ let rec knr info m stk =
         | None -> (set_norm m; (m,stk)))
   | FConstruct(ind,c) when red_set info.i_flags fIOTA ->
       (match strip_update_shift_app m stk with
-          (depth, args, Zcase(ci,_,br)::s) when eq_ind ind ci.ci_ind->
-            assert (ci.ci_npar>=0);
-            let rargs = drop_parameters depth ci.ci_npar args in
-            kni info br.(c-1) (rargs@s)
+          (depth, args, Zcase(ci,p,br)::s) ->
+	    if eq_ind ind ci.ci_ind then begin
+              assert (ci.ci_npar>=0);
+              let rargs = drop_parameters depth ci.ci_npar args in
+	      if c <= Array.length ci.ci_cstr_ndecls then
+		kni info br.(c-1) (rargs@s)
+	      else begin
+		Pp.msg_warning(Pp.str"Found a fixmatch/path redex (partial support).");
+		let fm = p in (* TODO! *)
+		kni info br.(c-1) (Zapp[|fm|]::rargs@s)
+	      end
+	    end else if eq_ind ind (destInd eq_cst) then begin
+	      let args = arguments depth args in
+	      assert (Array.length args = 2);
+	      Pp.msg_warning(Pp.str"Found a fixmatch/eq_refl redex (partial support).");
+	      let cs = {norm=Red;term=FCases(ci,p,args.(1),br)} in
+	      let csty = {norm=Red;term=FApp(p,[|args.(1)|])} in (* TODO: realargs *)
+	      ({norm=Cstr;term=FConstruct(ind,c)},Zapp[|csty;cs|]::s)
+	    end else
+		(m,args@Zcase(ci,p,br)::s)
         | (_, cargs, Zfix(fx,par)::s) ->
             let rarg = fapp_stack(m,cargs) in
             let stk' = par @ append_stack [|rarg|] s in
