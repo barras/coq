@@ -81,7 +81,11 @@ val build_path_rec_branch_type :
   inductive -> mutual_inductive_body * one_inductive_body ->
   constr array -> constr -> bool -> constr array ->
   (int * path_constructor) -> types * constr
-
+val build_case_path_type :
+  mutual_inductive_body * one_inductive_body ->
+  case_info * constr * constr array ->
+  constr list ->
+  constr -> constr -> constr -> constr
 
 (** Return the arity of an inductive type *)
 val mind_arity : one_inductive_body -> rel_context * sorts_family

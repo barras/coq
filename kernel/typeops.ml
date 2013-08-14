@@ -333,11 +333,30 @@ let check_branch_types env mkC cj (lfj,explft) =
     | Invalid_argument _ ->
         error_number_branches env cj (Array.length explft)
 
+
+let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
+let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
+
+let match_on_path env cj ci indspec =
+  try let _ = check_case_info env (fst indspec) ci in indspec,None
+  with TypeError _ as e ->
+    if eq_ind (fst indspec) (destInd eq_cst) && List.length (snd indspec) = 3 then
+      let [ty;lhs;rhs] = snd indspec in
+      let indspec' =
+	try find_rectype env ty
+	with Not_found -> error_case_not_inductive env cj in
+      let _ = check_case_info env (fst indspec') ci in
+      indspec',Some (lhs,rhs)
+    else raise e
+
+
+
+
 let judge_of_case env ci pj cj lfj =
   let indspec =
     try find_rectype env cj.uj_type
     with Not_found -> error_case_not_inductive env cj in
-  let _ = check_case_info env (fst indspec) ci in
+  let indspec, is_path = match_on_path env cj ci indspec in
   let (bty,pbty,rslty,univ) =
     type_case_branches ~recu:false env indspec pj cj.uj_val in
   let lfj, lgj = Array.chop (Array.length bty) lfj in
@@ -345,10 +364,20 @@ let judge_of_case env ci pj cj lfj =
   let univ'' =
     check_branch_types env (fun i -> (fst indspec,i+Array.length bty+1)) cj
       (lgj, pbty (Array.map j_val lfj)) in
-  ({ uj_val  = mkCase (ci, (*nf_betaiota*) pj.uj_val, cj.uj_val,
-                       Array.append (Array.map j_val lfj) (Array.map j_val lgj));
+  let br = Array.append (Array.map j_val lfj) (Array.map j_val lgj) in
+  let cst = union_constraints univ (union_constraints univ' univ'') in
+  let rslty =
+    match is_path with
+      None -> rslty
+    | Some (lhs,rhs) ->
+      let specif = lookup_mind_specif env (fst indspec) in
+      build_case_path_type specif
+	(ci,pj.uj_val,br) (snd indspec) lhs rhs cj.uj_val in
+  ({ uj_val  = mkCase (ci, (*nf_betaiota*) pj.uj_val, cj.uj_val, br);
      uj_type = rslty },
-  union_constraints univ (union_constraints univ' univ''))
+   cst)
+
+
 
 (* Fixpoints. *)
 

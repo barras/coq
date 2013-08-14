@@ -452,6 +452,13 @@ let do_combined_scheme name schemes =
 
 (**********************************************************************)
 
+let rect2 = 
+  declare_individual_scheme_object "_rect2" 
+    (fun ind ->
+      build_induction_path_scheme (Global.env()) Evd.empty ind)
+
+(**********************************************************************)
+
 let map_inductive_block f kn n = for i=0 to n-1 do f (kn,i) done
 
 let declare_default_schemes kn =
@@ -459,6 +466,11 @@ let declare_default_schemes kn =
   let n = Array.length mib.mind_packets in
   if !elim_flag && (not mib.mind_record || !record_elim_flag) then
     declare_induction_schemes kn;
+  if n=1 && Array.length mib.mind_packets.(0).mind_pathcons > 0 then
+    try_declare_scheme (str "Path scheme")
+      (fun int ona ind ->
+	ignore(define_individual_scheme rect2 int ona ind))
+      UserVerbose None (kn,0);
   if !case_flag then map_inductive_block declare_one_case_analysis_scheme kn n;
   if is_eq_flag() then try_declare_beq_scheme kn;
   if !eq_dec_flag then try_declare_eq_decidability kn;

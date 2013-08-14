@@ -45,8 +45,11 @@ let mkLambda_string s t c = mkLambda (Name (id_of_string s), t, c)
 (**********************************************************************)
 (* Building case analysis schemes *)
 (* Christine Paulin, 1996 *)
+let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
+let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
 
-let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
+let mis_make_case_com for_path dep env sigma ind (mib,mip as specif) kind =
+  let shift = if for_path then 2 else 0 in
   let lnamespar = List.map
     (fun (n, c, t) -> (n, c, Termops.refresh_universes t))
     mib.mind_params_ctxt
@@ -80,11 +83,11 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
     let cs = lift_path_constructor k pconstrs.(k') in
     let br0 = Termops.rel_vect k' nc in
     let (t,brsub) = build_path_rec_branch_type env dep (mkRel (1+k)) cs br0 in
-    let brsub = lift (nargstotal-k) brsub in
+    let brsub = lift (nargstotal+shift-k) brsub in
     let (hyps,inst) = decompose_lam_assum brsub in
     let inst = if isApp inst then snd(destApp inst) else [||] in
     let br =
-      let hd = mkApp(mkRel(nargstotal-k+Array.length cs.cs1_args_info+1),inst) in
+      let hd = mkApp(mkRel(nargstotal+shift-k+Array.length cs.cs1_args_info+1),inst) in
       it_mkLambda_or_LetIn hd hyps in
     (t,br) in
 
@@ -95,24 +98,28 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
       let t = build_branch_type env dep (mkRel (1+k)) (lift_point_constructor k cs) in
       mkLambda_string "f" t
 	(add_branch (push_rel (Anonymous, None, t) env) (k+1)
-	   (mkRel(nargstotal-k)::br))
+	   (mkRel(nargstotal+shift-k)::br))
     else if k < nc+Array.length pconstrs then
       let (t,brval) = build_path_branch env k in
       mkLambda_string "g" t
 	(add_branch (push_rel (Anonymous, None, t) env) (k+1) (brval::br))
     else
       let nbprod = k+1 in
-
       let indf' = lift_inductive_family nbprod indf in
       let arsign,_ = get_arity env indf' in
       let depind = build_dependent_inductive env indf' in
-      let deparsign = (Anonymous,None,depind)::arsign in
+      let deparsign =
+	if for_path then
+	  (Anonymous,None,mkApp(eq_cst,[|lift 2 depind;mkRel 2; mkRel 1|])) ::
+	    (Anonymous,None,lift 1 depind) :: (Anonymous,None,depind)::arsign 
+	else
+	  (Anonymous,None,depind)::arsign in
 
       let ci = make_case_info env ind RegularStyle in
       let pbody =
         appvect
           (mkRel (ndepar + nbprod),
-           if dep then Sign.args_of_rel_context 0 deparsign
+           if dep then Sign.args_of_rel_context 0 ((Anonymous,None,depind)::arsign)
            else Sign.args_of_rel_context 1 arsign) in
       let p =
 	it_mkLambda_or_LetIn_name env'
@@ -121,7 +128,7 @@ let mis_make_case_com dep env sigma ind (mib,mip as specif) kind =
           arsign
       in
       it_mkLambda_or_LetIn_name env'
-       	(mkCase (ci, lift ndepar p,
+       	(mkCase (ci, lift (ndepar+shift) p,
 		     mkRel 1,
 		     Array.of_list(List.rev br)))
        	deparsign
@@ -290,7 +297,7 @@ let context_chop k ctx =
 
 
 (* Main function *)
-let mis_make_indrec env sigma listdepkind mib =
+let mis_make_indrec for_path env sigma listdepkind mib =
   let nparams = mib.mind_nparams in
   let nparrec = mib. mind_nparams_rec in
   let lnonparrec,lnamesparrec =
@@ -475,7 +482,7 @@ let mis_make_indrec env sigma listdepkind mib =
       it_mkLambda_or_LetIn_name env (put_arity env' 0 listdepkind)
 	lnamesparrec
     else
-      mis_make_case_com dep env sigma indi (mibi,mipi) kind
+      mis_make_case_com for_path dep env sigma indi (mibi,mipi) kind
   in
     (* Body of mis_make_indrec *)
     List.tabulate make_one_rec nrec
@@ -485,7 +492,7 @@ let mis_make_indrec env sigma listdepkind mib =
 
 let build_case_analysis_scheme env sigma ity dep kind =
   let (mib,mip) = lookup_mind_specif env ity in
-  mis_make_case_com dep env sigma ity (mib,mip) kind
+  mis_make_case_com false dep env sigma ity (mib,mip) kind
 
 let build_case_analysis_scheme_default env sigma ity kind =
   let (mib,mip) = lookup_mind_specif env ity in
@@ -493,7 +500,7 @@ let build_case_analysis_scheme_default env sigma ity kind =
   | InProp -> false
   | _ -> true
   in
-  mis_make_case_com dep env sigma ity (mib,mip) kind
+  mis_make_case_com false dep env sigma ity (mib,mip) kind
 
 
 (**********************************************************************)
@@ -578,12 +585,16 @@ let build_mutual_induction_scheme env sigma = function
 	   lrecspec)
       in
       let _ = check_arities listdepkind in
-      mis_make_indrec env sigma listdepkind mib
+      mis_make_indrec false env sigma listdepkind mib
   | _ -> anomaly "build_induction_scheme expects a non empty list of inductive types"
 
 let build_induction_scheme env sigma ind dep kind =
   let (mib,mip) = lookup_mind_specif env ind in
-  List.hd (mis_make_indrec env sigma [(ind,mib,mip,dep,kind)] mib)
+  List.hd (mis_make_indrec false env sigma [(ind,mib,mip,dep,kind)] mib)
+
+let build_induction_path_scheme env sigma ind =
+  let (mib,mip) = lookup_mind_specif env ind in
+  List.hd (mis_make_indrec true env sigma [(ind,mib,mip,true,InType)] mib)
 
 (*s Eliminations. *)
 

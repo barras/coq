@@ -317,7 +317,7 @@ let check_allowed_sort ksort specif =
     let s = inductive_sort_family (snd specif) in
     raise (LocalArity (Some(ksort,s,error_elim_explain ksort s)))
 
-let is_correct_arity env c pj ind specif params =
+let is_correct_arity env pj ind specif params =
   let arsign,_ = get_instantiated_arity specif params in
   let rec srec env pt ar u =
     let pt' = whd_betadeltaiota env pt in
@@ -342,9 +342,8 @@ let is_correct_arity env c pj ind specif params =
       | _ ->
 	  raise (LocalArity None)
   in
-  try srec env pj.uj_type (List.rev arsign) empty_constraint
-  with LocalArity kinds ->
-    error_elim_arity env ind (elim_sorts specif) c pj kinds
+  srec env pj.uj_type (List.rev arsign) empty_constraint
+
 
 
 (************************************************************************)
@@ -367,7 +366,35 @@ let build_branches_type ind (_,mip as specif) params p =
     it_mkProd_or_LetIn base args in
   Array.mapi build_one_branch mip.mind_nf_lc
 
-
+(*
+let rec non_rec_path_branch_handside (ind,params) nc nrargs nz =
+  let rec make_hs k t args =
+  match kind_of_term t with
+  | Construct(cind,j) when eq_ind cind ind && j<=nc ->
+    let rargs = Array.sub args (Array.length params) nrargs in
+    beta_appvect (lift (k+nz+1) br.(j-1)) rargs
+  | Rel i when k<i && i<=k+nz ->
+    let posn = k+nz-i in
+    (match pc.c1_args_info.(posn) with
+      Some(ctxt,arginst) ->
+	Pp.msg_warning(Pp.str"Found a recarg. Good.");
+	(* remove parameters *)
+	let arginst =
+	  Array.sub arginst (Array.length params) nrargs in
+	(* relocate the info *)
+	let (ctxt,a) = decompose_prod_assum
+	  (lift i (it_mkProd_or_LetIn (mkApp(mkProp,arginst)) ctxt)) in
+	let arginst = if isApp a then snd(destApp a) else [||] in
+	(* non-uniform parameters crash here *)
+	assert (Array.length pc.c1_inst = Array.length arginst);
+	let sub = Sign.subst_of_rel_context_args ctxt args in
+	let ainst = Array.map (substl sub) arginst in
+	mkApp(mkApp(mkRel(k+nz+1), ainst),[|mkApp(t,args)|]) (* h args *)
+    | None -> not_recarg posn)
+  | App(u,args') -> make_hs k u (Array.append args' args)
+  | _ -> assert false in
+  make_hs 0 t [||]
+*)
 let build_path_norec_branch_type ind (mib,mip) params p dep =
   (* number of 0-constructors (= number of branches in the context...) *)
   let nc = Array.length mip.mind_consnames in
@@ -590,18 +617,32 @@ let build_path_branches_type ~recu ind (mib,mip as specif) params p =
   fun br ->
     Array.mapi (fun i pc -> mk_type br (instantiate (i+1) pc)) mip.mind_pathcons
 
-
 (* [p] is the predicate, [c] is the match object, [realargs] is the
    list of real args of the inductive type *)
 let build_case_type n p c realargs =
   whd_betaiota (betazeta_appvect (n+1) p (Array.of_list (realargs@[c])))
+
+let build_case_path_type specif (ci,p,br) args lhs rhs q =
+  let nparams = inductive_params specif in
+  let (params,realargs) = List.chop nparams args in
+  let lcase = 
+    mkApp(tr_cst,[|mkApp(mkInd ci.ci_ind,Array.of_list args);lhs;
+		   mkApp(p,Array.of_list realargs);mkCase(ci,p,lhs,br);rhs;q|])
+  in
+  let rcase = mkCase(ci,p,rhs,br) in
+  let n = (snd specif).mind_nrealargs_ctxt in
+  mkApp(eq_cst,[|build_case_type n p rhs realargs;lcase;rcase|])
+
 
 let type_case_branches ?(recu=true) env (ind,largs) pj c =
   let specif = lookup_mind_specif env ind in
   let nparams = inductive_params specif in
   let (params,realargs) = List.chop nparams largs in
   let p = pj.uj_val in
-  let univ = is_correct_arity env c pj ind specif params in
+  let univ =
+    try is_correct_arity env pj ind specif params
+    with LocalArity kinds ->
+      error_elim_arity env ind (elim_sorts specif) c pj kinds in
   let lc = build_branches_type ind specif params p in
   let plc =
     build_path_branches_type ~recu ind specif (Array.of_list params) pj.uj_val in

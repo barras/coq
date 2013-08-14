@@ -40,6 +40,7 @@ val build_case_analysis_scheme_default : env -> evar_map -> inductive ->
 
 val build_induction_scheme : env -> evar_map -> inductive ->
       dep_flag -> sorts_family -> constr
+val build_induction_path_scheme : env -> evar_map -> inductive -> constr
 
 (** Builds mutual (recursive) induction schemes *)
 
