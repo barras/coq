@@ -307,14 +307,23 @@ let it_destRLambda_or_LetIn_names n c =
               | _ -> (GApp (dl,c,[a])))
   in aux n [] c
 
-let detype_case computable detype detype_eqns testdep avoid data p c bl =
+let detype_fixmatch_var pbl =
+  let (lna,pbl) = List.split (List.map (fun c ->
+      match kind_of_term c with
+	Lambda(na,ty,b) -> (na,b)
+      | _ -> (Anonymous,mkApp(lift 1 c,[|mkRel 1|]))) pbl) in
+  let rec extr_na lna =
+    match lna with
+      Anonymous::lna -> extr_na lna
+    | Name id::_ -> id
+    | [] -> id_of_string "h" in
+  let hna = extr_na lna in
+  (hna,pbl)
+
+let detype_case computable detype detype_eqns testdep avoid data fxid p c bl =
   let (indsp,st,consnargsl,pconsnargsl,k) = data in
   let synth_type = synthetize_type () in
   let tomatch = detype c in
-  let fxid =
-    if Array.length pconsnargsl > 0 then
-      Some (dl, id_of_string "h") (* TODO: find the name given by the user! *)
-    else None in
   let alias, aliastyp, pred=
     if (not !Flags.raw_print) && synth_type && computable && not (Int.equal (Array.length bl) 0)
     then
@@ -422,11 +431,19 @@ let rec detype (isgoal:bool) avoid env t =
 	GRef (dl, ConstructRef cstr_sp)
     | Case (ci,p,c,bl) ->
 	let comp = computable p (ci.ci_pp_info.ind_nargs) in
+	let (avoid,fxid,bl) =
+	  if Array.length ci.ci_cstr_npdecls > 0 then
+	    let (bl0,bl1) = Array.chop (Array.length ci.ci_cstr_ndecls) bl in
+	    let (hna,bl1) = detype_fixmatch_var (Array.to_list bl1) in
+	    let hna = next_name_away (Name hna) avoid in
+	    let bl = Array.append bl0 (Array.of_list bl1) in
+	    (hna::avoid, Some (dl, hna), bl)
+	  else (avoid, None, bl) in
 	detype_case comp (detype isgoal avoid env)
-	  (detype_eqns isgoal avoid env ci comp)
+	  (detype_eqns isgoal avoid env ci comp fxid)
 	  is_nondep_branch avoid
 	  (ci.ci_ind,ci.ci_pp_info.style,
-	   ci.ci_cstr_ndecls,ci.ci_cstr_npdecls,ci.ci_pp_info.ind_nargs)
+	   ci.ci_cstr_ndecls,ci.ci_cstr_npdecls,ci.ci_pp_info.ind_nargs) fxid
 	  (Some p) c bl
     | Fix (nvn,recdef) -> detype_fix isgoal avoid env nvn recdef
     | CoFix (n,recdef) -> detype_cofix isgoal avoid env n recdef
@@ -499,18 +516,20 @@ and share_names isgoal n l avoid env c t =
         let t = detype isgoal avoid env t in
         (List.rev l,c,t)
 
-and detype_eqns isgoal avoid env ci computable constructs consnargsl pconsnargsl bl =
+and detype_eqns isgoal avoid env ci computable fxid constructs consnargsl pconsnargsl bl =
   try
-    if !Flags.raw_print or not (reverse_matching ()) then raise Exit;
+    if !Flags.raw_print or not (reverse_matching ())
+      or Array.length pconsnargsl > 0 (* HITs: use raw printer *)
+    then raise Exit;
     let mat = build_tree Anonymous isgoal (avoid,env) ci bl in
     List.map (fun (pat,((avoid,env),c)) -> (dl,[],[pat],detype isgoal avoid env c))
       mat
   with _ ->
     Array.to_list
-      (Array.map3 (detype_eqn isgoal avoid env)
+      (Array.map3 (detype_eqn isgoal (Array.length consnargsl) fxid avoid env)
 	 constructs (Array.append consnargsl pconsnargsl) bl)
 
-and detype_eqn isgoal avoid env constr construct_nargs branch =
+and detype_eqn isgoal ncstrs fxid avoid env constr construct_nargs branch =
   let make_pat x avoid env b ids =
     if force_wildcard () & noccurn 1 b then
       PatVar (dl,Anonymous),avoid,(add_name Anonymous env),ids
@@ -528,6 +547,8 @@ and detype_eqn isgoal avoid env constr construct_nargs branch =
 	| Lambda (x,_,b) ->
 	    let pat,new_avoid,new_env,new_ids = make_pat x avoid env b ids in
             buildrec new_ids (pat::patlist) new_avoid new_env (n-1) b
+(*	| Lambda (x,_,b), Some (_,h) ->
+            buildrec None (h::ids) patlist (h::avoid) (add_name(Name h) env) (n-1) b*)
 
 	| LetIn (x,_,_,b) ->
 	    let pat,new_avoid,new_env,new_ids = make_pat x avoid env b ids in
@@ -545,6 +566,12 @@ and detype_eqn isgoal avoid env constr construct_nargs branch =
 	    buildrec new_ids (pat::patlist) new_avoid new_env (n-1) new_b
 
   in
+  let (env,fxid) =
+    if snd constr > ncstrs then
+      match fxid with
+	Some(_,id) -> (add_name(Name id)env, fxid)
+      | None -> assert false
+    else (env,None) in
   buildrec [] [] avoid env construct_nargs branch
 
 and detype_binder isgoal bk avoid env na ty c =
