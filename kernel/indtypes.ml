@@ -751,8 +751,8 @@ let build_inductive env env_ar params isrecord isfinite inds nmr (recargs,precar
     let consnrealargs =
       Array.map (fun (d,_) -> rel_context_length d - rel_context_length params)
 	splayed_lc in
-    let pconsnrealargs = (* +1 for the recursive match function *)
-      Array.map (fun pc -> rel_context_length pc.c1_args + 1) lpc in
+    let pconsnrealargs = (* +1 for the recursive match function? *)
+      Array.map (fun pc -> rel_context_length pc.c1_args (*+1*)) lpc in
     (* Elimination sorts *)
     let arkind,kelim = match ar_kind with
       | Inr (param_levels,lev) ->

@@ -1296,8 +1296,9 @@ let specialize_path_predicate newtomatchs (names,depna) arsign cs tms ccl br0 =
   mkApp(eq_cst,[|rhsty;mkApp(tr_cst,[|ity;cs.cs1_lhs;ty;lhs';cs.cs1_rhs;d|]);rhs'|])
 
 let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
-  let ity = build_dependent_inductive pb.env indf in
+(*  let cs = { const_info with cs1_inst = Sign.args_of_rel_context (const_info.cs1_nargs+1) arsign } in*)
   let pred = 
+    let ity = build_dependent_inductive pb.env indf in
     it_mkLambda_or_LetIn (mkLambda (curname,ity,pb.pred)) arsign in
   let brty = Inductiveops.build_path_branch_type ~recu:false pb.env true pred const_info brs in
   let hna = match pb.fxid with Some id -> Name id | None -> Anonymous in
@@ -1319,11 +1320,10 @@ let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
   let htyps = lift_rel_context 1 typs@[(hna,None,hty)] in*)
   let submat = List.map (fun (tms,_,eqn) -> prepend_pattern tms eqn) eqns in
   let typs' =
-    List.map_i (fun i d -> (mkRel i,map_rel_declaration (lift (i+1)) d)) 1 typs in
+    List.map_i (fun i d -> (mkRel i,map_rel_declaration (lift i) d)) 1 typs in
   let extenv = push_rel_context htyps pb.env in
   let typs' =
-    List.map (fun (c,d) ->
-      (c,extract_inductive_data extenv !(pb.evdref) d,d)) typs' in
+    List.map (fun (c,(na,_,t)) -> ((c,NotInd(None,t)),[],na)) typs' in
 (*  let dep_sign =
     find_dependencies_signature
       (dependencies_in_rhs const_info.cs1_nargs current pb.tomatch eqns)
@@ -1334,14 +1334,9 @@ let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
     | Rel i -> replace_tomatch (i+const_info.cs1_nargs) arg tomatch
     | _ -> tomatch) (current::realargs) (ci::cirealargs)*)
       (lift_tomatch_stack (const_info.cs1_nargs+1) pb.tomatch) in
-  let typs' =
-    List.map
-      (fun (tm,(tmtyp,_),(na,_,_)) ->
-	((tm,tmtyp),[],na))
-      typs' in
 (*  let pred =
     specialize_path_predicate typs' (realnames,curname) arsign const_info tomatch pb.pred brs in*)
-  let pred = lift 2 pred in
+  let pred = liftn const_info.cs1_nargs (const_info.cs1_nargs+1) pred in
   let currents = List.map (fun x -> Pushed x) typs' in
   let alias = NonDepAlias in
   let tomatch = List.rev_append (alias :: currents) tomatch in
