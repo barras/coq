@@ -1296,7 +1296,12 @@ let specialize_path_predicate newtomatchs (names,depna) arsign cs tms ccl br0 =
   mkApp(eq_cst,[|rhsty;mkApp(tr_cst,[|ity;cs.cs1_lhs;ty;lhs';cs.cs1_rhs;d|]);rhs'|])
 
 let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
-(*  let cs = { const_info with cs1_inst = Sign.args_of_rel_context (const_info.cs1_nargs+1) arsign } in*)
+  let fx_id = match pb.fxid with
+      None -> Some (id_of_string"_")
+    | na -> na in
+  let history =
+    push_history_pattern const_info.cs1_nargs const_info.cs1_cstr pb.history in
+
   let pred = 
     let ity = build_dependent_inductive pb.env indf in
     it_mkLambda_or_LetIn (mkLambda (curname,ity,pb.pred)) arsign in
@@ -1304,43 +1309,24 @@ let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
   let hna = match pb.fxid with Some id -> Name id | None -> Anonymous in
   let (_,hty,brty) = destProd brty in
   let (typs,pred) = decompose_prod_n_assum (List.length const_info.cs1_args) brty in
+  let pred = liftn const_info.cs1_nargs (const_info.cs1_nargs+1) pred in
 
-  let fx_id = match pb.fxid with
-      None -> Some (id_of_string"_")
-    | na -> na in
-(*  let hty =
-    it_mkLambda_or_LetIn (mkLambda (curname,mkInd(fst const_info.cs1_cstr),pb.pred)) arsign in (* TODO:FIXME *)*)
-  let history =
-    push_history_pattern const_info.cs1_nargs const_info.cs1_cstr pb.history in
   let cs_args = const_info.cs1_args in
   let names,aliasname = get_names pb.env cs_args eqns in
   let typs = List.map2 (fun (_,c,t) na -> (na,c,t)) typs names in
   let htyps = typs@[(hna,None,hty)] in
-(*  let typs = List.map2 (fun (_,c,t) na -> (na,c,t)) cs_args names in
-  let htyps = lift_rel_context 1 typs@[(hna,None,hty)] in*)
-  let submat = List.map (fun (tms,_,eqn) -> prepend_pattern tms eqn) eqns in
-  let typs' =
-    List.map_i (fun i d -> (mkRel i,map_rel_declaration (lift i) d)) 1 typs in
-  let extenv = push_rel_context htyps pb.env in
-  let typs' =
-    List.map (fun (c,(na,_,t)) -> ((c,NotInd(None,t)),[],na)) typs' in
-(*  let dep_sign =
-    find_dependencies_signature
-      (dependencies_in_rhs const_info.cs1_nargs current pb.tomatch eqns)
-      (List.rev typs') in*)
-(*  let cirealargs = Array.to_list const_info.cs1_inst in*)
-  let tomatch = (*List.fold_right2 (fun par arg tomatch ->
-    match kind_of_term par with
-    | Rel i -> replace_tomatch (i+const_info.cs1_nargs) arg tomatch
-    | _ -> tomatch) (current::realargs) (ci::cirealargs)*)
-      (lift_tomatch_stack (const_info.cs1_nargs+1) pb.tomatch) in
-(*  let pred =
-    specialize_path_predicate typs' (realnames,curname) arsign const_info tomatch pb.pred brs in*)
-  let pred = liftn const_info.cs1_nargs (const_info.cs1_nargs+1) pred in
-  let currents = List.map (fun x -> Pushed x) typs' in
+  
+  let currents =
+    List.map_i (fun i (na,_,t) -> Pushed((mkRel i,NotInd(None,lift i t)),[],na)) 1 typs in
   let alias = NonDepAlias in
+  let tomatch = lift_tomatch_stack (const_info.cs1_nargs+1) pb.tomatch in
   let tomatch = List.rev_append (alias :: currents) tomatch in
+
+  let submat = List.map (fun (tms,_,eqn) -> prepend_pattern tms eqn) eqns in
   let submat = adjust_impossible_cases pb pred tomatch submat in
+
+  let extenv = push_rel_context htyps pb.env in
+
   htyps,
   { pb with
       env = extenv;

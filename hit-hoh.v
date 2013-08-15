@@ -231,8 +231,7 @@ Program Fixpoint Z2Z_rect' (P:Type) (f:P) (f0:Z2Z->P->P) (g:f=f0 (su ze) (f0 ze 
 Next Obligation.
 apply eq_trans with (1:=g).
 f_equal.
-admit. (* f0 ze f = Z2Z_rect' P f f0 g (su ze) *)
-Abort.
+Abort. (* f0 ze f = Z2Z_rect' P f f0 g (su ze) *)
 
 (*Fixpoint F (z:Z2Z) : nat :=
   Z2Z_rect' nat 0 (fun z' => Z2Z_rect' nat 0 (fun z''
