@@ -51,7 +51,7 @@ type case_info =
     ci_npar       : int;
     ci_cstr_ndecls : int array; (** number of real args of each constructor *)
     ci_cstr_npdecls : int array; (** number of real args of each path constructor
-                                      + 1 for the recursive match function *)
+                                      + 1 for the recursive match function? *)
     ci_pp_info    : case_printing (** not interpreted by the kernel *)
   }
 

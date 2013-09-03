@@ -1273,27 +1273,6 @@ let build_branch current realargs deps (realnames,curname) pb arsign eqns const_
       history = history;
       mat = List.map (push_rels_eqn_with_names None typs) submat }
 
-let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
-let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
-let tr_cst = mkConst(make_con logicp empty_dirpath (label_of_id(id_of_string"eq_rect")))
-let specialize_path_predicate newtomatchs (names,depna) arsign cs tms ccl br0 =
-  let hack_cs =
-    { cs0_cstr = cs.cs1_cstr;
-      cs0_params = cs.cs1_params;
-      cs0_nargs = cs.cs1_nargs(*+1*);
-      cs0_args = cs.cs1_args;
-(*	lift_rel_context 1 (cs.cs1_args)@[na,None,pb.pred];*)
-      cs0_concl_realargs = [||] (*?*)
-    } in
-  let rhsty = 
-    specialize_predicate_gen newtomatchs (names,depna) arsign tms (liftn 1 2 ccl)
-      (cs.cs1_rhs,cs.cs1_nargs,cs.cs1_inst) in
-  let ity = mkApp(mkApp(mkInd(fst cs.cs1_cstr),Array.of_list cs.cs1_params), cs.cs1_inst) in
-  let d = build_dependent_constructor hack_cs in
-  let ty = mkApp(ccl,cs.cs1_inst) in
-  let lhs' = cs.cs1_lhs in (* TODO *)
-  let rhs' = cs.cs1_rhs in
-  mkApp(eq_cst,[|rhsty;mkApp(tr_cst,[|ity;cs.cs1_lhs;ty;lhs';cs.cs1_rhs;d|]);rhs'|])
 
 let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
   let fx_id = match pb.fxid with
@@ -1315,7 +1294,8 @@ let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
   let names,aliasname = get_names pb.env cs_args eqns in
   let typs = List.map2 (fun (_,c,t) na -> (na,c,t)) typs names in
   let htyps = typs@[(hna,None,hty)] in
-  
+
+  (* path constructor arguments cannot be matched (no deep pm) *)  
   let currents =
     List.map_i (fun i (na,_,t) -> Pushed((mkRel i,NotInd(None,lift i t)),[],na)) 1 typs in
   let alias = NonDepAlias in
@@ -1334,20 +1314,7 @@ let build_path_branch indf (realnames,curname) pb arsign eqns const_info brs =
       pred = pred;
       history = history;
       mat = List.map (push_rels_eqn_with_names fx_id htyps) submat }
-(*
 
-  let hack_cs =
-    { cs0_cstr = const_info.cs1_cstr;
-      cs0_params = const_info.cs1_params;
-      cs0_nargs = const_info.cs1_nargs(*+1*);
-      cs0_args = const_info.cs1_args;
-(*	lift_rel_context 1 (const_info.cs1_args)@[na,None,pb.pred];*)
-      cs0_concl_realargs = [||] (*?*)
-    } in
-  (* We never know...*)
-  let pb = {pb with env = push_rel(na,None,pb.pred)pb.env}in
-  build_branch current realargs deps (realnames,curname) pb arsign eqns hack_cs
-*)
 (**********************************************************************
  INVARIANT:
 

@@ -149,14 +149,6 @@ val specialize_predicate :
   point_constructor_summary ->
   tomatch_status list -> constr -> constr
 
-val specialize_path_predicate :
-  (('a * tomatch_type) * 'b * name) list ->
-  'c list * name ->
-  rel_context ->
-  path_constructor_summary ->
-  tomatch_status list -> constr ->
-  constr array -> constr
-
 val match_current : 
   'a pattern_matching_problem ->
   (Term.constr * tomatch_type) * int list * Names.name ->
