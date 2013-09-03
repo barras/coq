@@ -244,6 +244,7 @@ let in_whnf (t,stk) =
     | FCoFix _ -> no_case_available None stk
     | FFix(((ri,n),(_,_,_)),_) -> no_nth_arg_available ri.(n) stk
     | (FFlex _ | FProd _ | FEvar _ | FInd _ | FAtom _ | FRel _) -> true
+    | FFixMatch _ -> assert false (* should not happen ? *)
     | FLOCKED -> assert false
 
 (* Conversion between  [lft1]term1 and [lft2]term2 *)

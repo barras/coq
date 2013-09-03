@@ -284,9 +284,25 @@ Lemma circlep_eqn : forall A P f f0 f1 g n x c,
   dmap (circlep_rect A P f f0 f1 g _) (loopp A n x c) =
   g n x c (fun m => circlep_rect A P f f0 f1 g _ (c m)).
 intros.
+change (dmap (circlep_rect _ _ f f0 f1 g 1) (loopp _ n x c) =
+        circlep_rect2 A P f f0 f1 g _ _ _ (loopp A n x c)).
+case (loopp A n x c).
+unfold circlep_rect2.
+simpl.
+reflexivity.
+Defined.
+(*
+@eq (@eq (P (S O) (basepn A (S O))) (f1 (S O)) (f1 (S O)))
+     (@eq_refl (P (S O) (basepn A (S O))) (f1 (S O)))
+     (@eq_refl (P Prop (basepn A (S O))) (f1 (S O)))
+(Prop = dummy) *)
+
+(* oldies: *)
+Set Printing All.
+(*reflexivity.  *TODO: indices in fixmatch/eq_refl reduction... *)
 pose (H := circlep_rect2 A P f f0 f1 g _ _ _ (loopp A n x c)).
 (* simpl in H. bogus *)
-unfold circlep_rect2 in H. (* FIXME: closure.ml *)
+unfold circlep_rect2 in H. (* FIXED *)
 transitivity (circlep_rect2 A P f f0 f1 g _ _ _ (loopp A n x c)).
 2:unfold circlep_rect2.
 Set Printing All.

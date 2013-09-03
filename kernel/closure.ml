@@ -326,6 +326,7 @@ and fterm =
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
   | FCases of case_info * fconstr * fconstr * fconstr array
+  | FFixMatch of int * case_info * fconstr * fconstr array
   | FLambda of int * (name * constr) list * constr * fconstr subs
   | FProd of name * fconstr * fconstr
   | FLetIn of name * fconstr * fconstr * constr * fconstr subs
@@ -614,6 +615,13 @@ let rec to_constr constr_fun lfts v =
 	mkCase (ci, constr_fun lfts p,
                 constr_fun lfts c,
 		Array.map (constr_fun lfts) ve)
+    | FFixMatch(nra,ci,p,br) ->
+      let lfts' = el_liftn (nra+1) lfts in
+      let ar = List.tabulate (fun i -> (Anonymous,None,mkProp(*dummy*))) (nra+1) in
+      it_mkLambda_or_LetIn
+	(mkCase(ci,constr_fun lfts' p, mkRel 1,
+       		Array.map(constr_fun lfts')br))
+	ar
     | FFix ((op,(lna,tys,bds)),e) ->
         let n = Array.length bds in
         let ftys = Array.map (mk_clos e) tys in
@@ -842,6 +850,10 @@ let rec knh m stk =
         (match get_nth_arg m ri.(n) stk with
              (Some(pars,arg),stk') -> knh arg (Zfix(m,pars)::stk')
            | (None, stk') -> (m,stk'))
+    | FFixMatch(n,ci,p,br) ->
+        (match get_nth_arg m n stk with
+             (Some(pars,arg),stk') -> knh arg (Zcase(ci,p,br)::stk')
+           | (None, stk') -> (m,stk')) (* should not happen (cf knr) *)
     | FCast(t,_,_) -> knh t stk
 (* cases where knh stops *)
     | (FFlex _|FLetIn _|FConstruct _|FEvar _|
@@ -868,6 +880,12 @@ and knht e t stk =
 (* Computes a weak head normal form from the result of knh. *)
 let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
 let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
+let rec is_top = function
+    [] -> true
+  | (Zapp _|Zcase _|Zfix _)::_ -> false
+  | Zshift _::s -> is_top s
+  | Zupdate _::s -> is_top s
+
 let rec knr info m stk =
   match m.term with
   | FLambda(n,tys,f,e) when red_set info.i_flags fBETA ->
@@ -895,16 +913,29 @@ let rec knr info m stk =
 	      if c <= Array.length ci.ci_cstr_ndecls then
 		kni info br.(c-1) (rargs@s)
 	      else begin
-		Pp.msg_warning(Pp.str"Found a fixmatch/path redex (partial support).");
-		let fm = p in (* TODO! *)
+		Pp.msg_warning(Pp.str"Found a fixmatch/path redex (fragile support).");
+		let fm =
+		  let n = ci.ci_pp_info.ind_nargs (* TODO: not exclusively pp info anymore! *) in
+		  {norm=Whnf;term=FFixMatch(n,ci,p,br)} in
 		kni info br.(c-1) (Zapp[|fm|]::rargs@s)
 	      end
 	    end else if eq_ind ind (destInd eq_cst) then begin
-	      let args = arguments depth args in
-	      assert (Array.length args = 2);
+	      let argsv = arguments depth args in
+	      assert (Array.length argsv = 2);
 	      Pp.msg_warning(Pp.str"Found a fixmatch/eq_refl redex (partial support).");
-	      let cs = {norm=Red;term=FCases(ci,p,args.(1),br)} in
-	      let csty = {norm=Red;term=FApp(p,[|args.(1)|])} in (* TODO: realargs *)
+	      let cs = {norm=Red;term=FCases(ci,p,argsv.(1),br)} in
+	      let rargs = 
+		let n = ci.ci_pp_info.ind_nargs in
+		let (ity,istk) = knh argsv.(0) [] in
+		let (d',iargs,istk) = strip_update_shift_app ity istk in
+		let iargs = arguments d' iargs in
+		if Array.length iargs = ci.ci_npar + n && is_top istk then
+		  Array.sub iargs ci.ci_npar n
+		else begin
+		  Pp.msg_warning(Pp.str"WIP: fixmatch/refl => dummy");
+		  Array.make n {norm=Norm;term=FAtom mkProp}(*TODO: replace dummy*)
+		end in
+	      let csty = {norm=Red;term=FApp(p,Array.append rargs [|argsv.(1)|])} in
 	      ({norm=Cstr;term=FConstruct(ind,c)},Zapp[|csty;cs|]::s)
 	    end else
 		(m,args@Zcase(ci,p,br)::s)
@@ -926,6 +957,7 @@ let rec knr info m stk =
       (match evar_value info ev with
           Some c -> knit info env c stk
         | None -> (m,stk))
+  | FFixMatch _ -> anomaly "Closure.knr: found unsaturated FFixMatch"
   | _ -> (m,stk)
 
 (* Computes the weak head normal form of a term *)
@@ -996,6 +1028,7 @@ and norm_head info m =
           mkFix(n,(na, Array.map (kl info) ftys, Array.map (kl info) fbds))
       | FEvar((i,args),env) ->
           mkEvar(i, Array.map (fun a -> kl info (mk_clos env a)) args)
+      | FFixMatch _ -> assert false
       | t -> term_of_fconstr m
 
 (* Initialization and then normalization *)
