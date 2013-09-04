@@ -286,77 +286,13 @@ Lemma circlep_eqn : forall A P f f0 f1 g n x c,
 intros.
 change (dmap (circlep_rect _ _ f f0 f1 g 1) (loopp _ n x c) =
         circlep_rect2 A P f f0 f1 g _ _ _ (loopp A n x c)).
-case (loopp A n x c).
+case (loopp A n x c). (* use of J on loopp *)
 unfold circlep_rect2.
 simpl.
 reflexivity.
 Defined.
-(*
-@eq (@eq (P (S O) (basepn A (S O))) (f1 (S O)) (f1 (S O)))
-     (@eq_refl (P (S O) (basepn A (S O))) (f1 (S O)))
-     (@eq_refl (P Prop (basepn A (S O))) (f1 (S O)))
-(Prop = dummy) *)
+Print circlep_eqn.
 
-(* oldies: *)
-Set Printing All.
-(*reflexivity.  *TODO: indices in fixmatch/eq_refl reduction... *)
-pose (H := circlep_rect2 A P f f0 f1 g _ _ _ (loopp A n x c)).
-(* simpl in H. bogus *)
-unfold circlep_rect2 in H. (* FIXED *)
-transitivity (circlep_rect2 A P f f0 f1 g _ _ _ (loopp A n x c)).
-2:unfold circlep_rect2.
-Set Printing All.
-Check ( @eq
-     (@eq (P (S O) (basep1 A c))
-        (@eq_rect (circlep A (S O)) (basepn A (S O)) 
-           (P (S O)) (circlep_rect A P f f0 f1 g (S O) (basepn A (S O)))
-           (basep1 A c) (loopp A n x c))
-        (circlep_rect A P f f0 f1 g (S O) (basep1 A c)))
-     (@dmap (circlep A (S O)) (P (S O)) (circlep_rect A P f f0 f1 g (S O))
-        (basepn A (S O)) (basep1 A c) (loopp A n x c))
-     (circlep_rect2 A P f f0 f1 g (S O) (basepn A (S O)) 
-        (basep1 A c) (loopp A n x c)) ).
-case (loopp A n x c).
-Check (  @eq
-     (@eq (P (S O) (basepn A (S O)))
-        (@eq_rect (circlep A (S O)) (basepn A (S O)) 
-           (P (S O)) (circlep_rect A P f f0 f1 g (S O) (basepn A (S O)))
-           (basepn A (S O)) (@eq_refl (circlep A (S O)) (basepn A (S O))))
-        (circlep_rect A P f f0 f1 g (S O) (basepn A (S O))))
-     (@dmap (circlep A (S O)) (P (S O)) (circlep_rect A P f f0 f1 g (S O))
-        (basepn A (S O)) (basepn A (S O))
-        (@eq_refl (circlep A (S O)) (basepn A (S O))))
-     (circlep_rect2 A P f f0 f1 g (S O) (basepn A (S O)) 
-        (basepn A (S O)) (@eq_refl (circlep A (S O)) (basepn A (S O)))) ).
-lazy beta delta [circlep_rect2].
-lazy beta delta iota. (* bug: closure.ml *)
-Check ( @eq (@eq (P (S O) (basepn A (S O))) (f1 (S O)) (f1 (S O)))
-     (@eq_refl (P (S O) (basepn A (S O))) (f1 (S O)))
-     (@eq_refl (fun c0 : circlep A (basepn A (S O)) => P (basepn A (S O)) c0)
-        (f1 (S O))) ).
-
-Unset Printing Notations.
-
-Variable
-  (A : Type) (P : forall n : nat, circlep A n -> Type)
-  (f : P 0 (basep A))
-  (f0: forall c : nat -> circlep A 0, (forall n, P 0 (c n)) -> P 1 (basep1 A c))
-  (f1 : forall n : nat, P n (basepn A n))
-  (g: forall (h:forall (n : nat) (c : circlep A n), P n c)
-             (n : nat) (x : A) (c : nat -> circlep A 0),
-      eq_rect _ (P 1) (f1 1) _ (loopp A n x c) = f0 c (fun n => h 0 (c n))).
-
-
-(*
-Fixpoint circlep_recu (n : nat) (c : circlep A n) : P n c :=
-  circlep_rect A P
-    f
-    (fun c => f0 c (fun n => circlep_recu 0 (c n)))
-    f1
-    g
-    n c.
-
-*)
 (* TODO: non-unif params anomaly *)
 (*Inductive circle0 (n:nat): U :=
   base0 : circle0 0
@@ -372,29 +308,3 @@ Inductive circle2 (n:nat) : nat->U :=
   base2 m : circle2 n m
 with paths := loop2_ (m:nat) : (base2 m) = (base2 m).
 
-(*
-Drop.
-#use"include";;
-#trace build_induction_scheme;;
-#trace Inductive.build_path_rec_branch_type;;
-
-
-#trace check_inductive;;
-#trace get_constructors;;
-#trace build_induction_scheme;;
-#trace Inductive.build_path_branch_type;;
-
-
-get_path_constructor;;
-
-
-
-Drop.
-#use"include";;
-let base = constr_of_string "base";;
-let ind = fst(destConstruct base);;
-let eqind = (fst ind,-1);;
-let (mib,mip) = lookup_mind_specif (Global.env()) ind;;
-let a = arities_of_constructors (Global.env()) ind;;
-let a = arities_of_constructors (Global.env()) eqind;;
-*)

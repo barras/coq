@@ -616,8 +616,8 @@ let rec to_constr constr_fun lfts v =
                 constr_fun lfts c,
 		Array.map (constr_fun lfts) ve)
     | FFixMatch(nra,ci,p,br) ->
-      let lfts' = el_liftn (nra+1) lfts in
-      let ar = List.tabulate (fun i -> (Anonymous,None,mkProp(*dummy*))) (nra+1) in
+      let lfts' = el_shft (nra+1) lfts in
+      let ar = List.tabulate (fun i -> (Anonymous,None,mkEvar(nra+1,[||])(*dummy*))) (nra+1) in
       it_mkLambda_or_LetIn
 	(mkCase(ci,constr_fun lfts' p, mkRel 1,
        		Array.map(constr_fun lfts')br))
@@ -707,6 +707,11 @@ let fapp_stack (m,stk) = zip m stk
    (strip_update_shift_app), a fix (get_nth_arg) or an abstraction
    (strip_update_shift, through get_arg). *)
 
+(* Given a stack [stk], remove the longest prefix that contains all of
+   the arguments of the head ([rstk] reversed), and the remainder of [stk].
+   It also returns [depth], the number of shifts in [rstk].
+   The head has to be given in order to update the pending updates found
+   in the prefix of [stk]. *)
 (* optimised for the case where there are no shifts... *)
 let strip_update_shift_app head stk =
   assert (match head.norm with Red -> false | _ -> true);
@@ -724,24 +729,25 @@ let strip_update_shift_app head stk =
 
 let get_nth_arg head n stk =
   assert (match head.norm with Red -> false | _ -> true);
-  let rec strip_rec rstk h n = function
+  let rec strip_rec (depth,rstk) h n = function
     | Zshift(k) as e :: s ->
-        strip_rec (e::rstk) (lift_fconstr k h) n s
+        strip_rec (depth+k,e::rstk) (lift_fconstr k h) n s
     | Zapp args::s' ->
         let q = Array.length args in
         if n >= q
         then
-          strip_rec (Zapp args::rstk) {norm=h.norm;term=FApp(h,args)} (n-q) s'
+          strip_rec (depth,Zapp args::rstk)
+	    {norm=h.norm;term=FApp(h,args)} (n-q) s'
         else
           let bef = Array.sub args 0 n in
           let aft = Array.sub args (n+1) (q-n-1) in
           let stk' =
             List.rev (if Int.equal n 0 then rstk else (Zapp bef :: rstk)) in
-          (Some (stk', args.(n)), append_stack aft s')
+          (Some (depth, stk', args.(n)), append_stack aft s')
     | Zupdate(m)::s ->
-        strip_rec rstk (update m (h.norm,h.term)) n s
+        strip_rec (depth,rstk) (update m (h.norm,h.term)) n s
     | s -> (None, List.rev rstk @ s) in
-  strip_rec [] head n stk
+  strip_rec (0,[]) head n stk
 
 (* Beta reduction: look for an applied argument in the stack.
    Since the encountered update marks are removed, h must be a whnf *)
@@ -848,11 +854,14 @@ let rec knh m stk =
     | FCases(ci,p,t,br) -> knh t (Zcase(ci,p,br)::zupdate m stk)
     | FFix(((ri,n),(_,_,_)),_) ->
         (match get_nth_arg m ri.(n) stk with
-             (Some(pars,arg),stk') -> knh arg (Zfix(m,pars)::stk')
+             (Some(_,pars,arg),stk') -> knh arg (Zfix(m,pars)::stk')
            | (None, stk') -> (m,stk'))
     | FFixMatch(n,ci,p,br) ->
         (match get_nth_arg m n stk with
-             (Some(pars,arg),stk') -> knh arg (Zcase(ci,p,br)::stk')
+             (Some(depth,_,arg),stk') ->
+	       let p' = lift_fconstr depth p in
+	       let br' = Array.map (lift_fconstr depth) br in
+	       knh arg (Zcase(ci,p',br')::stk')
            | (None, stk') -> (m,stk')) (* should not happen (cf knr) *)
     | FCast(t,_,_) -> knh t stk
 (* cases where knh stops *)
@@ -906,7 +915,7 @@ let rec knr info m stk =
         | None -> (set_norm m; (m,stk)))
   | FConstruct(ind,c) when red_set info.i_flags fIOTA ->
       (match strip_update_shift_app m stk with
-          (depth, args, Zcase(ci,p,br)::s) ->
+          (depth, args, Zcase(ci,p,br)::s) -> (* stk is equiv to [Zshift depth;Zapp args; Zcase _::s]? *)
 	    if eq_ind ind ci.ci_ind then begin
               assert (ci.ci_npar>=0);
               let rargs = drop_parameters depth ci.ci_npar args in
