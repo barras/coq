@@ -357,8 +357,14 @@ let rec str_const c =
             begin
 	    let oib = lookup_mind kn !global_env in
 	    let oip = oib.mind_packets.(j) in
-	    let num,arity = oip.mind_reloc_tbl.(i-1) in
 	    let nparams = oib.mind_nparams in
+	    if i > Array.length oip.mind_reloc_tbl then begin
+	      Pp.msg_warning
+		(Pp.str "VM: path constructors are not compiled correctly yet!");
+              let b_args = Array.map str_const args in
+	      Bconstruct_app(i,nparams,0,b_args) (* TODO *)
+	    end else begin
+	    let num,arity = oip.mind_reloc_tbl.(i-1) in
 	    if Int.equal (nparams + arity) (Array.length args) then
               (* spiwack: *)
               (* 1/ tries to compile the constructor in an optimal way,
@@ -419,7 +425,8 @@ let rec str_const c =
                          b_args)
 	      with Not_found ->
 	        Bconstruct_app(num, nparams, arity, b_args)
-              end
+            end
+	    end
 	| _ -> Bconstr c
       end
   | Ind ind -> Bstrconst (Const_ind ind)
