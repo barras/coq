@@ -45,8 +45,6 @@ let mkLambda_string s t c = mkLambda (Name (id_of_string s), t, c)
 (**********************************************************************)
 (* Building case analysis schemes *)
 (* Christine Paulin, 1996 *)
-let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
-let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
 
 let mis_make_case_com for_path dep env sigma ind (mib,mip as specif) kind =
   let shift = if for_path then 2 else 0 in
@@ -110,7 +108,7 @@ let mis_make_case_com for_path dep env sigma ind (mib,mip as specif) kind =
       let depind = build_dependent_inductive env indf' in
       let deparsign =
 	if for_path then
-	  (Anonymous,None,mkApp(eq_cst,[|lift 2 depind;mkRel 2; mkRel 1|])) ::
+	  (Anonymous,None,mkApp(mkInd paths_ind,[|lift 2 depind;mkRel 2; mkRel 1|])) ::
 	    (Anonymous,None,lift 1 depind) :: (Anonymous,None,depind)::arsign 
 	else
 	  (Anonymous,None,depind)::arsign in

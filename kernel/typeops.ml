@@ -334,13 +334,10 @@ let check_branch_types env mkC cj (lfj,explft) =
         error_number_branches env cj (Array.length explft)
 
 
-let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
-let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
-
 let match_on_path env cj ci indspec =
   try let _ = check_case_info env (fst indspec) ci in indspec,None
   with TypeError _ as e ->
-    if eq_ind (fst indspec) (destInd eq_cst) && List.length (snd indspec) = 3 then
+    if eq_ind (fst indspec) paths_ind && List.length (snd indspec) = 3 then
       let [ty;lhs;rhs] = snd indspec in
       let indspec' =
 	try find_rectype env ty

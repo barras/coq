@@ -224,10 +224,7 @@ let arities_of_specif kn (mib,mip) =
 let arities_of_constructors ind specif =
   arities_of_specif (fst ind) specif
 
-
-let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
-let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
-let tr_cst = mkConst(make_con logicp empty_dirpath (label_of_id(id_of_string"eq_rect")))
+let eq_cst = mkInd paths_ind
 
 let type_of_path_constructor (mind,i) (mib,mip as specif) =
   let pctxt = mib.mind_params_ctxt in
@@ -463,8 +460,8 @@ let build_path_norec_branch_type ind (mib,mip) params p dep =
 	else
 	  let tyrhs = beta_appvect (lift (nc+1+nz) p) pc.c1_inst in
 	  (mkLambda(Anonymous,ity,lift 1 tyrhs), tyrhs) in
-      let d = mkApp(cstr,Array.append par' (Sign.args_of_rel_context 0 pc.c1_args)) in
-      mkApp(eq_cst,[|tyrhs;mkApp(tr_cst,[|ity;pc.c1_lhs;ty;lhs';pc.c1_rhs;d|]);rhs'|]) in
+      let prf = mkApp(cstr,Array.append par' (Sign.args_of_rel_context 0 pc.c1_args)) in
+      mkApp(eq_cst,[|tyrhs;build_J ~eqn:(ity,pc.c1_lhs,pc.c1_rhs) ~prf ~pred:ty lhs';rhs'|]) in
 
   (* Generate the type of the branch: forall (h:hty) (z:args), tr_P(C(params,z),lhs') = rhs'
      in the context containing the 0-branches *)
@@ -579,7 +576,7 @@ let build_path_rec_branch_type ind (mib,mip) params p dep =
 	  let tyrhs = beta_appvect (lift nz' p) inst in
 	  (mkLambda(Anonymous,ity,lift 1 tyrhs), tyrhs) in
       let d = mkApp(cstr,Array.append par' (Array.map(exsubst rel)(Sign.args_of_rel_context 0 pc.c1_args))) in
-      mkApp(eq_cst,[|tyrhs;mkApp(tr_cst,[|ity;lhs;ty;lhs';rhs;d|]);rhs'|]) in
+      mkApp(eq_cst,[|tyrhs;build_J ~eqn:(ity,lhs,rhs) ~prf:d ~pred:ty lhs';rhs'|]) in
 
   let args_inv =
     fst(decompose_prod_assum(lift 1 (it_mkProd_or_LetIn mkProp pc.c1_args))) in
@@ -626,9 +623,11 @@ let build_case_path_type specif (ci,p,br) args lhs rhs q =
   let nparams = inductive_params specif in
   let (params,realargs) = List.chop nparams args in
   let lcase = 
-    mkApp(tr_cst,[|mkApp(mkInd ci.ci_ind,Array.of_list args);lhs;
-		   mkApp(p,Array.of_list realargs);mkCase(ci,p,lhs,br);rhs;q|])
-  in
+    build_J
+      ~eqn:(mkApp(mkInd ci.ci_ind,Array.of_list args),lhs,rhs)
+      ~prf:q
+      ~pred:(mkApp(p,Array.of_list realargs))
+      (mkCase(ci,p,lhs,br)) in
   let rcase = mkCase(ci,p,rhs,br) in
   let n = (snd specif).mind_nrealargs_ctxt in
   mkApp(eq_cst,[|build_case_type n p rhs realargs;lcase;rcase|])

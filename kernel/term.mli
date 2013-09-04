@@ -643,3 +643,13 @@ val hcons_types : types -> types
 (**************************************)
 
 type values
+
+(************** HITs *************)
+
+val paths_ind : inductive
+val build_J :
+  eqn:constr*constr*constr -> (* type, lhs, rhs *)
+  prf:constr -> (* proof object *)
+  pred:constr -> (* elim predicate *)
+  constr -> (* branch, of type (pred ... lhs) *)
+  constr

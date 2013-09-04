@@ -1452,3 +1452,12 @@ let hcons_types = hcons_constr
 (*******)
 (* Type of abstract machine values *)
 type values
+
+(* HITs: equality and J *)
+let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
+let eq_name = "eq"
+
+let paths_ind = (make_mind logicp empty_dirpath (label_of_id(id_of_string eq_name)),0)
+let build_J ~eqn:(ty,lhs,rhs) ~prf ~pred br =
+  let tr_cst = mkConst(make_con logicp empty_dirpath (label_of_id(id_of_string(eq_name^"_rect")))) in
+  mkApp(tr_cst,[|ty;lhs;pred;br;rhs;prf|])

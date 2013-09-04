@@ -887,8 +887,6 @@ and knht e t stk =
 (************************************************************************)
 
 (* Computes a weak head normal form from the result of knh. *)
-let logicp = MPfile(make_dirpath(List.map id_of_string ["Logic";"Init";"Coq"]))
-let eq_cst = mkInd(make_mind logicp empty_dirpath (label_of_id(id_of_string"eq")),0)
 let rec is_top = function
     [] -> true
   | (Zapp _|Zcase _|Zfix _)::_ -> false
@@ -928,7 +926,7 @@ let rec knr info m stk =
 		  {norm=Whnf;term=FFixMatch(n,ci,p,br)} in
 		kni info br.(c-1) (Zapp[|fm|]::rargs@s)
 	      end
-	    end else if eq_ind ind (destInd eq_cst) then begin
+	    end else if eq_ind ind paths_ind then begin
 	      let argsv = arguments depth args in
 	      assert (Array.length argsv = 2);
 	      Pp.msg_warning(Pp.str"Found a fixmatch/eq_refl redex (partial support).");
