@@ -9,7 +9,7 @@ Lemma eq_rect_cst (A:Type) (x y:A) (e:x=y) (P:Type) (p:P) :
   transp (fun _ => P) e p = p.
 case e; reflexivity.
 Qed.
-Definition dmap {X:Type}{Y:X->Type}(f:forall x:X,Y x){x x':X}(e:x=x')
+Definition apD {X:Type}{Y:X->Type}(f:forall x:X,Y x){x x':X}(e:x=x')
    : transp Y e (f x) = f x' :=
   match e in _=z return eq_rect x Y (f x) z e=f z with
   | eq_refl => eq_refl (f x)
@@ -28,16 +28,22 @@ Check Circle_rect.
 (*
 Circle_rect
      : forall (P : Circle -> Type) (f : P base),
-       loop @ f = f -> forall c : Circle, P c
+       transp P loop f = f -> forall c : Circle, P c
 *)
 Print Circle_rect.
 (*
 fun (P : Circle -> Type) (f : P base) (g : transp P loop f = f) (c : Circle) =>
 fixmatch {h} c as c0 return (P c0) with
 | base => f
-| loop _ => g
+| loop => g
 end
 *)
+(* fixmatch and match are the same thing: *)
+Check fun (P : Circle -> Type) (f : P base) (g : transp P loop f = f) (c : Circle) =>
+  match c return (P c) with
+  | base => f
+  | loop => g
+  end.
 
 Print Circle_rect2.
 (*
@@ -46,18 +52,18 @@ fun (P : Circle -> Type) (f : P base) (g : transp P loop f = f)
   (c c0 : Circle) (e : c = c0) =>
 fixmatch {h} e as c1 return (P c1) with
 | base => f
-| loop _ => g
+| loop => g
 end
      : forall (P : Circle -> Type) (f : P base) (g : transp P loop f = f)
          (c c0 : Circle) (e : c = c0),
        transp (fun c1 : Circle => P c1) e
-       fixmatch {h} c as c1 return (P c1) with
+       fixmatch {h} c return (P c) with
        | base => f
-       | loop _ => g
+       | loop => g
        end =
-       fixmatch {h} c0 as c1 return (P c1) with
+       fixmatch {h} c0 return (P c0) with
        | base => f
-       | loop _ => g
+       | loop => g
        end
 *)
 Check (Circle_rect2 : forall
@@ -76,11 +82,12 @@ Lemma compute_base : Circle_rect P pt lp base = pt.
 Proof (refl_equal pt). (* definitional equality *)
 
 Lemma compute_loop :
-      dmap (Circle_rect P pt lp) loop = lp.
+      apD (Circle_rect P pt lp) loop = lp.
 (* uses: (Circle_rect2 ... loop) reduces to lp *)
-change (dmap (Circle_rect P pt lp) loop = Circle_rect2 P pt lp _ _ loop).
+change (apD (Circle_rect P pt lp) loop = Circle_rect2 P pt lp _ _ loop).
 case loop.
 (* uses: (Circle_rect2 ... eq_refl) reduces to eq_refl (and the usual reduction of J) *)
+compute.
 lazy beta delta iota.
 reflexivity.
 Qed.
@@ -157,11 +164,11 @@ fun (P : Interval -> Type) (f : P left) (f0 : P right)
 match i as i0 return (P i0) with
 | left => f
 | right => f0
-| segment _ => g
+| segment => g
 end
 *)
 
-Lemma Interval_connected (x:Interval): x=right.
+Lemma Interval_contractible (x:Interval): x=right.
 eapply Interval_rect with (i:=x).
 Show Existentials.
 instantiate (1:=eq_refl).
@@ -223,25 +230,25 @@ Check (Cyl_rect2 : forall (X Y : Type) (g : X -> Y) (P : forall y : Y, Cyl g y -
   transp (P y) e (Cyl_rect X Y g P f f0 g0 y c) = Cyl_rect X Y g P f f0 g0 y c').
 
 
-Inductive isInhab (X:Type) : Type :=
-    | proj : X -> isInhab X
+Inductive prop_tr (X:Type) : Type :=
+    | proj : X -> prop_tr X
 with paths :=
-    | contr (y y' : isInhab X) : y=y'.
-Check isInhab_rect.
+    | contr (y y' : prop_tr X) : y=y'.
+Check prop_tr_rect.
 (*
-isInhab_rect
-     : forall (X : Type) (P : isInhab X -> Type),
+prop_tr_rect
+     : forall (X : Type) (P : prop_tr X -> Type),
        (forall x : X, P (proj X x)) ->
-       (forall (y : isInhab X) (h : P y) (y' : isInhab X) (h0 : P y'),
-        transp P (contr X y y') h = h0) -> forall i : isInhab X, P i
+       (forall (y : prop_tr X) (h : P y) (y' : prop_tr X) (h0 : P y'),
+        transp P (contr X y y') h = h0) -> forall i : prop_tr X, P i
 *)
-Check (isInhab_rect2 :
-       forall (X : Type) (P : isInhab X -> Type)
+Check (prop_tr_rect2 :
+       forall (X : Type) (P : prop_tr X -> Type)
        (f:forall x : X, P (proj X x))
-       (g:forall (y : isInhab X) (h : P y) (y' : isInhab X) (h0 : P y'),
+       (g:forall (y : prop_tr X) (h : P y) (y' : prop_tr X) (h0 : P y'),
         transp P (contr X y y') h = h0)
-       (i i': isInhab X) (e:i=i'),
-       transp P e (isInhab_rect X P f g i) = isInhab_rect X P f g i').
+       (i i': prop_tr X) (e:i=i'),
+       transp P e (prop_tr_rect X P f g i) = prop_tr_rect X P f g i').
 
 (* Recursive 1-constructors not allowed yet (+ defines 2-constructor):
 Inductive tr0 (X:Type) : Type :=
@@ -250,6 +257,7 @@ with paths :=
     | contr (z : tr0 X) (p : z=z): p = (eq_refl z).
 *)
 
+(* Set truncation *)
 Inductive τ_0 X : Type :=
   | truncn : X -> τ_0 X
   | hub : (Circle -> τ_0 X) -> τ_0 X
@@ -265,6 +273,7 @@ Check τ_0_rect.
           (s : Circle), transp P (spoke X l s) (f0 l) = h s) ->
        forall τ : τ_0 X, P τ
 *)
+Check τ_0_rect2.
 
 (* 2-constructor
 Inductive quotient (A : Type) (R : A -> A -> Prop) : Type :=
@@ -273,7 +282,6 @@ with paths :=
 | relate (x y : A) (h:R x y) : (qproj x) = (qproj y)
 | contr1 (x y : quotient A R) (p q : x=y) : p = q.
  *)
-Check τ_0_rect2.
 
 
 Inductive hpushout {A B C : Type} (f : A -> B) (g : A -> C) : Type :=
