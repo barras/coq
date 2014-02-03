@@ -278,18 +278,43 @@ and cbv_stack_term info stack env t =
         cbv_stack_term info stk envf redfix
 
     (* constructor in a Case -> IOTA *)
-    | (CONSTR((sp,n),[||]), APP(args,CASE(_,br,ci,env,stk)))
-	    (* /!\ TODO: runtime check on inductive (hit) *)
-            when eq_ind sp ci.ci_ind && red_set (info_flags info) fIOTA ->
+    | (CONSTR((sp,n),[||]), APP(args,CASE(_,br,ci,env,stk))) as state
+        when red_set (info_flags info) fIOTA ->
+      if eq_ind sp ci.ci_ind then
 	let cargs =
           Array.sub args ci.ci_npar (Array.length args - ci.ci_npar) in
-        cbv_stack_term info (stack_app cargs stk) env br.(n-1)
-
+	if n <= Array.length ci.ci_cstr_ndecls then
+	  (* point constructor *)
+          cbv_stack_term info (stack_app cargs stk) env br.(n-1)
+	else begin
+	  (* fixmatch/path reduction *)
+	  Pp.msg_warning(Pp.str"Found a fixmatch/path redex (cbv reduction)");
+	  let fm = VAL(0,mkProp) (* dummy! *) in
+          cbv_stack_term info (stack_app[|fm|](stack_app cargs stk)) env br.(n-1)
+	end
+      else begin
+	(* TODO (hit): test for fixmatch/eq_refl reduction *)
+	Pp.msg_warning(Pp.str"TODO: fixmatch/eq_refl redex ?");
+	mkSTACK state
+      end
     (* constructor of arity 0 in a Case -> IOTA *)
-    | (CONSTR((sp,n),[||]), CASE(_,br,ci,env,stk))
-	    (* /!\ TODO: runtime check on inductive (hit) *)
-            when eq_ind sp ci.ci_ind && red_set (info_flags info) fIOTA ->
-                    cbv_stack_term info stk env br.(n-1)
+    | (CONSTR((sp,n),[||]), CASE(_,br,ci,env,stk)) as state
+        when red_set (info_flags info) fIOTA ->
+      if eq_ind sp ci.ci_ind then
+	if n <= Array.length ci.ci_cstr_ndecls then
+	  (* point constructor *)
+          cbv_stack_term info stk env br.(n-1)
+	else begin
+	  (* fixmatch/path reduction *)
+	  Pp.msg_warning(Pp.str"Found a fixmatch/path redex (cbv reduction 2)");
+	  let fm = VAL(0,mkProp) (* dummy! but OK since cstr has no args *) in
+          cbv_stack_term info (stack_app[|fm|]stk) env br.(n-1)
+	end
+      else begin
+	(* TODO (hit): test for fixmatch/eq_refl reduction *)
+	Pp.msg_warning(Pp.str"TODO: fixmatch/eq_refl redex ?");
+	mkSTACK state
+      end
 
     (* may be reduced later by application *)
     | (FIXP(fix,env,[||]), APP(appl,TOP)) -> FIXP(fix,env,appl)
