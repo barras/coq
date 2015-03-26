@@ -332,10 +332,14 @@ let init_fun_code () = fun_code := []
 (* Inv : nparam + arity > 0 *)
 let code_construct tag nparams arity cont =
   let f_cont =
-      add_pop nparams
-      (if Int.equal arity 0 then
-	[Kconst (Const_b0 tag); Kreturn 0]
-       else [Kacc 0; Kpop 1; Kmakeblock(arity, tag); Kreturn 0])
+    add_pop nparams
+	    (if Int.equal arity 0 then
+	       [Kconst (Const_b0 tag); Kreturn 0]
+	     else if tag < hightag_tag then
+	       [Kacc 0; Kpop 1; Kmakeblock(arity, tag); Kreturn 0]
+	     else
+	       [Kconst (Const_b0 (tag-hightag_tag));
+		Kmakeblock(arity+1, hightag_tag); Kreturn 0])
     in
     let lbl = Label.create() in
     fun_code := [Ksequence (add_grab (nparams+arity) lbl f_cont,!fun_code)];
@@ -357,7 +361,7 @@ let rec str_const c =
             begin
 	    let oib = lookup_mind kn !global_env in
 	    let oip = oib.mind_packets.(j) in
-	    let num,arity = oip.mind_reloc_tbl.(i-1) in
+	    let tag,arity = oip.mind_reloc_tbl.(i-1) in
 	    let nparams = oib.mind_nparams in
 	    if Int.equal (nparams + arity) (Array.length args) then
               (* spiwack: *)
@@ -399,15 +403,15 @@ let rec str_const c =
               with Not_found ->
 		(* 3/ if no special behavior is available, then the compiler
 		      falls back to the normal behavior *)
-		if Int.equal arity 0 then Bstrconst(Const_b0 num)
+		if Int.equal arity 0 then Bstrconst(Const_b0 tag)
 		else
 		  let rargs = Array.sub args nparams arity in
 		  let b_args = Array.map str_const rargs in
 		  try
 		    let sc_args = Array.map get_strcst b_args in
-		    Bstrconst(Const_bn(num, sc_args))
+		    Bstrconst(Const_bn(tag, sc_args))
 		  with Not_found ->
-		    Bmakeblock(num,b_args)
+		    Bmakeblock(tag,b_args)
 	    else
               let b_args = Array.map str_const args in
 	     (* spiwack: tries first to apply the run-time compilation
@@ -418,7 +422,7 @@ let rec str_const c =
                                            f),
                          b_args)
 	      with Not_found ->
-	        Bconstruct_app(num, nparams, arity, b_args)
+	        Bconstruct_app(tag, nparams, arity, b_args)
               end
 	| _ -> Bconstr c
       end
@@ -608,6 +612,10 @@ let rec compile_constr reloc c sz cont =
       let mib = lookup_mind (fst ind) !global_env in
       let oib = mib.mind_packets.(snd ind) in
       let tbl = oib.mind_reloc_tbl in
+      let push_fields_for tag arity code =
+	if tag < hightag_tag then Kpushfields arity :: code
+	(* the block to destruct is on top of the stack... *)
+	else Kacc 0::Kpop 1::Kpushfields(arity+1)::Kpop 1::code in
       let lbl_consts = Array.make oib.mind_nb_constant Label.no in
       let lbl_blocks = Array.make (oib.mind_nb_args+1) Label.no in
       let branch1,cont = make_branch cont in
@@ -643,19 +651,32 @@ let rec compile_constr reloc c sz cont =
 	  let lbl_b,code_b =
 	    label_code(
 	    if Int.equal nargs arity then
-	      Kpushfields arity ::
-	      compile_constr (push_param arity sz_b reloc)
-		body (sz_b+arity) (add_pop arity (branch :: !c))
+	      push_fields_for tag arity
+	        (compile_constr (push_param arity sz_b reloc)
+		  body (sz_b+arity) (add_pop arity (branch :: !c)))
 	    else
 	      let sz_appterm = if is_tailcall then sz_b + arity else arity in
-	      Kpushfields arity ::
-	      compile_constr reloc branchs.(i) (sz_b+arity)
-		(Kappterm(arity,sz_appterm) :: !c))
+	      push_fields_for tag arity
+	        (compile_constr reloc branchs.(i) (sz_b+arity)
+		  (Kappterm(arity,sz_appterm) :: !c)))
 	  in
 	  lbl_blocks.(tag) <- lbl_b;
 	  c := code_b
       done;
+      let lbl_blocks =
+	if Array.length lbl_blocks <= hightag_tag then lbl_blocks else
+	  begin
+	    let v1 = Array.sub lbl_blocks 0 (hightag_tag+1) in
+	    let v2 = Array.sub lbl_blocks hightag_tag
+			       (Array.length lbl_blocks - hightag_tag) in
+	    let lbl_indir,code_indir =
+	      label_code(Kpush::Kfield 0::Kswitch(v2,[||])::!c) in
+	    c := code_indir;
+	    v1.(hightag_tag) <- lbl_indir;
+	    v1
+	  end in
       c :=  Klabel lbl_sw :: Kswitch(lbl_consts,lbl_blocks) :: !c;
+
       let code_sw =
  	match branch1 with
         (* spiwack : branch1 can't be a lbl anymore it's a Branch instead
@@ -677,6 +698,10 @@ and compile_str_cst reloc sc sz cont =
   | Bstrconst sc -> Kconst sc :: cont
   | Bmakeblock(tag,args) ->
       let nargs = Array.length args in
+      let (tag,nargs,args) =
+	if tag < hightag_tag then (tag,nargs,args)
+	else (hightag_tag,nargs+1,
+	      Array.append[|Bstrconst(Const_b0 (tag-hightag_tag))|]args) in
       comp_args compile_str_cst reloc args sz (Kmakeblock(nargs,tag) :: cont)
   | Bconstruct_app(tag,nparams,arity,args) ->
       if Int.equal (Array.length args) 0 then code_construct tag nparams arity cont

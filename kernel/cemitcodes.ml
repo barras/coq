@@ -213,8 +213,8 @@ let emit_instr = function
       out opGETGLOBAL; slot_for_const c
   | Kmakeblock(n, t) ->
       if Int.equal n 0 then invalid_arg "emit_instr : block size = 0"
-      else if n < 4 then (out(opMAKEBLOCK1 + n - 1); out_int t)
-      else (out opMAKEBLOCK; out_int n; out_int t)
+      else if n < 4 then (out(opMAKEBLOCK1 + n - 1); out_int (t:>int))
+      else (out opMAKEBLOCK; out_int n; out_int (t:>int))
   | Kmakeprod ->
       out opMAKEPROD
   | Kmakeswitchblock(typlbl,swlbl,annot,sz) ->

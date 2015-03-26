@@ -20,13 +20,15 @@ val fix_tag : tag
 val switch_tag : tag
 val cofix_tag : tag
 val cofix_evaluated_tag : tag
+val hightag_tag : tag
 
 type structured_constant =
   | Const_sorts of sorts
   | Const_ind of pinductive
-  | Const_b0 of tag
+  | Const_b0 of int
   | Const_bn of tag * structured_constant array
 
+(** Mapping (non-constant) constructor number -> vm representation and arity *)
 type reloc_table = (tag * int) array
 
 type annot_switch =
@@ -150,8 +152,8 @@ val draw_instr : bytecodes -> unit
 type block =
   | Bconstr of constr
   | Bstrconst of structured_constant
-  | Bmakeblock of int * block array
-  | Bconstruct_app of int * int * int * block array
+  | Bmakeblock of tag * block array
+  | Bconstruct_app of tag * int * int * block array
                   (** tag , nparams, arity *)
   | Bspecial of (comp_env -> block array -> int -> bytecodes -> bytecodes) * block array
                 (** compilation function (see get_vm_constant_dynamic_info in

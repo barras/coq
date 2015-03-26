@@ -24,12 +24,13 @@ let fix_tag = 3
 let switch_tag = 4
 let cofix_tag = 5
 let cofix_evaluated_tag = 6
+let hightag_tag = 245
 
 type structured_constant =
   | Const_sorts of sorts
   | Const_ind of pinductive
-  | Const_b0 of tag
-  | Const_bn of tag * structured_constant array
+  | Const_b0 of int
+  | Const_bn of int * structured_constant array
 
 
 type reloc_table = (tag * int) array
@@ -152,8 +153,8 @@ type comp_env = {
 
 
 (* --- Pretty print *)
-open Format
-let rec instruction ppf = function
+let rec instruction ppf = let open Format in
+  function
   | Klabel lbl -> fprintf ppf "L%i:" lbl
   | Kacc n -> fprintf ppf "\tacc %i" n
   | Kenvacc n -> fprintf ppf "\tenvacc %i" n
@@ -230,7 +231,8 @@ let rec instruction ppf = function
 (* /spiwack *)
 
 
-and instruction_list ppf = function
+and instruction_list ppf = let open Format in
+  function
     [] -> ()
   | Klabel lbl :: il ->
       fprintf ppf "L%i:%a" lbl instruction_list il
@@ -254,4 +256,5 @@ type block =
 
 
 let draw_instr c =
+  let open Format in
   fprintf std_formatter "@[<v 0>%a@]" instruction_list c

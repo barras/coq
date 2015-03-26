@@ -293,12 +293,15 @@ let rec obj_of_str_const str =
   | Const_b0 tag -> Obj.repr tag
   | Const_bn(tag, args) ->
       let len = Array.length args in
+      let (tag,len,args) =
+	if tag < hightag_tag then (tag,len,args)
+	else (hightag_tag,len+1,Array.append [|Const_b0 (tag-hightag_tag)|] args) in
       let res = Obj.new_block tag len in
       for i = 0 to len - 1 do
 	Obj.set_field res i (obj_of_str_const args.(i))
       done;
       res
-
+		
 let val_of_obj o = ((Obj.obj o) : values)
 
 let val_of_str_const str = val_of_obj (obj_of_str_const str)
@@ -518,9 +521,15 @@ let type_of_switch sw =
 let branch_arg k (tag,arity) =
   if Int.equal arity 0 then  ((Obj.magic tag):values)
   else
-    let b = Obj.new_block tag arity in
+    let (b,ofs) =
+      if tag < hightag_tag then (Obj.new_block tag arity,0)
+      else begin
+	  let b = Obj.new_block hightag_tag (arity+1) in
+	  Obj.set_field b 0 (Obj.repr (tag-hightag_tag));
+	  (b,1)
+	end in
     for i = 0 to arity - 1 do
-      Obj.set_field b i (Obj.repr (val_of_rel (k+i)))
+      Obj.set_field b (i+ofs) (Obj.repr (val_of_rel (k+i)))
     done;
     val_of_obj b
 
