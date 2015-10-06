@@ -10,8 +10,7 @@ Qed.
 
 Inductive Circle : Type :=
     | Base (n n':nat) : Circle
-with paths :=
-    | Loop n m : (Base n n) = (Base m m).
+   // Loop n m : (Base n n) = (Base m m).
 
 Print Circle_rect.
 Check
@@ -27,8 +26,7 @@ end.
 
 Inductive Circlep (X:Type) : Type :=
     | Basep (n n':X) : Circlep X
-with paths :=
-    | Loopp n m : (Basep n n) = (Basep m m).
+   // Loopp n m : (Basep n n) = (Basep m m).
 Implicit Arguments Basep [X].
 Implicit Arguments Loopp [X].
 Print Circlep_rect2.
@@ -44,9 +42,8 @@ end.
 
 
 Inductive circle : U :=
-  base
-with paths :=
-  loop : base=base.
+   base
+// loop : base=base.
 
 Definition test_match_circle (c:circle) : nat :=
   fixmatch{h} c with
@@ -73,10 +70,9 @@ Eval compute in L.
 Inductive circle' : U :=
   base' (n:nat)
 | base''
-with paths :=
-  loop0 : base''=base''
-| loop1 (n:_) : (base' n)=base''
-| loop2 (n:circle') : base''=base''.
+// loop0 : base''=base''
+ | loop1 (n:_) : (base' n)=base''
+ | loop2 (n:circle') : base''=base''.
 
 Print circle'_rect.
 
@@ -95,8 +91,7 @@ end).
 
 Inductive isInhabn : Type :=
     | projn : nat -> isInhabn
-with paths :=
-    | contrn (y y' : isInhabn) (x x':nat) : (projn x) = (projn x').
+   // contrn (y y' : isInhabn) (x x':nat) : (projn x) = (projn x').
 Print isInhabn_rect.
 Print isInhabn_rect2.
 Check (fun (P : isInhabn -> Type) (f : forall n : nat, P (projn n))
@@ -112,8 +107,7 @@ end).
 
 Inductive isInhab0 (X:Type) : Type :=
     | proj0 : X -> isInhab0 X
-with paths :=
-    | contr0 (y y' : isInhab0 X) (x x':X) : (proj0 x) = (proj0 x').
+   // contr0 (y y' : isInhab0 X) (x x':X) : (proj0 x) = (proj0 x').
 Implicit Arguments proj0 [X].
 Implicit Arguments contr0 [X].
 Print isInhab0_rect.
@@ -131,8 +125,7 @@ end).
 
 Inductive isInhab1 (X:Type) : Type :=
     | proj1 (x: X): isInhab1 X
-with paths :=
-    | contr1 (y y' : nat->isInhab1 X) (n:nat) : (y n)=(y' 1).
+   // contr1 (y y' : nat->isInhab1 X) (n:nat) : (y n)=(y' 1).
 Implicit Arguments proj1 [X].
 Implicit Arguments contr1 [X].
 Print isInhab1_rect.
@@ -151,16 +144,14 @@ end).
 (*Unset Elimination Schemes.*)
 (*Inductive isInhab2 (X:Type) : Type :=
     | proj2 (x: X): isInhab2 X
-with paths :=
-    | contr2 (n:nat)(m:=0)(y y' : forall p:nat,n=p->isInhab2 X) (a:=0)(b:=0) : (y n eq_refl)=(y' 1 (magic _)).
+   // contr2 (n:nat)(m:=0)(y y' : forall p:nat,n=p->isInhab2 X) (a:=0)(b:=0) : (y n eq_refl)=(y' 1 (magic _)).
 Print isInhab2_rect. (* buggy eta expansion of branches *)
 Notation "e @ x" := (eq_rect _ _ x _ e) (at level 60, right associativity).
 *)
 
 Inductive IPA (X:Type)(u:X->X) : X->X->Type :=
     | C3  (n:nat)(x x':X) (y y' : IPA X u (u x') x) : IPA X u x x'
-with paths :=
-    | P3  (n:nat)(x x':X) (y y' : IPA X u (u x') x) : y=y'.
+   // P3  (n:nat)(x x':X) (y y' : IPA X u (u x') x) : y=y'.
 Implicit Arguments C3 [X u].
 Implicit Arguments P3 [X u].
 Print IPA_rect.
@@ -180,8 +171,7 @@ end).
 
 Inductive isInhab3 (X:Type)(f:X->X) : X->X->Type :=
     | proj3 (x: X): isInhab3 X f x x
-with paths :=
-    | contr3  (n:nat)(x x':X) (y y' : isInhab3 X f (f x') x) : y=y'.
+   // contr3  (n:nat)(x x':X) (y y' : isInhab3 X f (f x') x) : y=y'.
 Implicit Arguments proj3 [X f].
 Implicit Arguments contr3 [X f].
 Print isInhab3_rect.
@@ -201,15 +191,13 @@ end).
 
 Inductive isInhab (X:Type)(f:X->X) : X->X->Type :=
     | proj (x: X): isInhab X f x x
-with paths :=
-    | contr  (n:nat)(x x':X) (y y' : nat->isInhab X f (f x') x) : (y n)=(y' 1).
+   // contr  (n:nat)(x x':X) (y y' : nat->isInhab X f (f x') x) : (y n)=(y' 1).
 Print isInhab_rect.
 
 Inductive Z2Z :=
-| ze
-| su (_:Z2Z)
-with paths :=
-| mod : ze = (su (su ze)).
+ | ze
+ | su (_:Z2Z)
+// mod : ze = (su (su ze)).
 Check Z2Z_rect.
 
 Definition Z2Z_case' (P:Type) (f:P) (f0:Z2Z->P) (g:f = f0 (su ze)) (z:Z2Z) : P :=
@@ -255,8 +243,7 @@ Inductive circlep (A:Type): nat->U :=
   basep : circlep A 0
 | basep1 (_:nat->circlep A 0) : circlep A 1
 | basepn (n:nat) : circlep A n
-with paths :=
-  loopp (n:nat)(x:A)(c:nat->circlep A 0) : (basepn 1)=(basep1 c).
+// loopp (n:nat)(x:A)(c:nat->circlep A 0) : (basepn 1)=(basep1 c).
 Print circlep_rect.
 Check (fun (A : Type) (P : forall n : nat, circlep A n -> Type) 
   (f : P 0 (basep A)) (f0 : forall c : nat -> circlep A 0, P 1 (basep1 A c))
@@ -295,16 +282,16 @@ Print circlep_eqn.
 
 (* TODO: non-unif params anomaly *)
 (*Inductive circle0 (n:nat): U :=
-  base0 : circle0 0
-with paths := loop0 : base0=base0. 
+   base0 : circle0 0
+// loop0 : base0=base0. 
 *)
 
 
 Inductive circle1 (n:nat) : nat->U :=
-  base1 m : circle1 n m
-with paths := loop1_ m : (base1 m ) = (base1 m).
+   base1 m : circle1 n m
+// loop1_ m : (base1 m ) = (base1 m).
 
 Inductive circle2 (n:nat) : nat->U :=
-  base2 m : circle2 n m
-with paths := loop2_ (m:nat) : (base2 m) = (base2 m).
+   base2 m : circle2 n m
+// loop2_ (m:nat) : (base2 m) = (base2 m).
 

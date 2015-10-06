@@ -278,14 +278,11 @@ GEXTEND Gram
   ;
   path_constructor_list:
     [ [ -> []
-      | "with"; IDENT"paths"; ":="; pl = paths -> pl ] ]
+      | "//"; pl = paths -> pl ] ]
   ;
   paths:
     [ [ -> []
-      | "|"; l = LIST1 path_constructor SEP "|" -> l
-      | id = identref ; c = path_constructor_type; "|";
-	l = LIST0 path_constructor SEP "|" -> ((id,c)::l)
-      | id = identref ; c = path_constructor_type -> [id,c] ] ]
+      | l = LIST0 path_constructor SEP "|" -> l ] ]
   ;
 
 (*

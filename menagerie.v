@@ -21,8 +21,7 @@ Definition apD {X:Type}{Y:X->Type}(f:forall x:X,Y x){x x':X}(e:x=x')
 
 Inductive Circle : Type :=
     | base : Circle
-with paths :=
-    | loop : base = base.
+   // loop : base = base.
 
 Check Circle_rect.
 (*
@@ -107,8 +106,7 @@ End CircleComputation.
 Inductive Circle' : Type :=
   | east : Circle'
   | west : Circle'
-with paths :=
-  | upper : west = east
+ // upper : west = east
   | lower : east = west.
 
 Check Circle'_rect.
@@ -147,8 +145,7 @@ Eval compute in Circle2Circle' base.
 Inductive Interval : Type :=
     | left : Interval
     | right : Interval
-with paths :=
-    | segment : left = right.
+   // segment : left = right.
 
 Check Interval_rect.
 (*
@@ -183,16 +180,14 @@ Defined.
 (*
 Inductive Sphere2 : Type :=
     | base2 : Sphere2
-with paths :=
-    | surf2 : (@refl_equal _ base2) = (@refl_equal _ base2).
+   // surf2 : (@refl_equal _ base2) = (@refl_equal _ base2).
 *)
 
 
 Inductive Susp (X : Type) : Type :=
     | north : Susp X
     | south : Susp X
-with paths :=
-    | merid (x:X) : north = south.
+   // merid (x:X) : north = south.
 
 Check Susp_rect.
 (*
@@ -210,8 +205,7 @@ Check (Susp_rect2 :
 Inductive Cyl {X Y : Type} (g : X -> Y) : Y -> Type :=
     | cyl_base : forall y:Y, Cyl g y
     | cyl_top : forall x:X, Cyl g (g x)
-with paths :=
-    | cyl_seg (x:X) : (cyl_top x) = (cyl_base (g x)).
+   // cyl_seg (x:X) : (cyl_top x) = (cyl_base (g x)).
 
 Check Cyl_rect.
 (*
@@ -232,8 +226,7 @@ Check (Cyl_rect2 : forall (X Y : Type) (g : X -> Y) (P : forall y : Y, Cyl g y -
 
 Inductive prop_tr (X:Type) : Type :=
     | proj : X -> prop_tr X
-with paths :=
-    | contr (y y' : prop_tr X) : y=y'.
+   // contr (y y' : prop_tr X) : y=y'.
 Check prop_tr_rect.
 (*
 prop_tr_rect
@@ -253,16 +246,14 @@ Check (prop_tr_rect2 :
 (* Recursive 1-constructors not allowed yet (+ defines 2-constructor):
 Inductive tr0 (X:Type) : Type :=
     | incl : X -> tr0 X
-with paths :=
-    | contr (z : tr0 X) (p : z=z): p = (eq_refl z).
+   // contr (z : tr0 X) (p : z=z): p = (eq_refl z).
 *)
 
 (* Set truncation *)
 Inductive τ_0 X : Type :=
   | truncn : X -> τ_0 X
   | hub : (Circle -> τ_0 X) -> τ_0 X
-with paths :=
-  | spoke (l : Circle -> τ_0 X) (s : Circle) : (hub l) = (l s).
+ // spoke (l : Circle -> τ_0 X) (s : Circle) : (hub l) = (l s).
 Check τ_0_rect.
 (*
 τ_0_rect
@@ -277,18 +268,16 @@ Check τ_0_rect2.
 
 (* 2-constructor
 Inductive quotient (A : Type) (R : A -> A -> Prop) : Type :=
-| qproj : A -> quotient A R
-with paths :=
-| relate (x y : A) (h:R x y) : (qproj x) = (qproj y)
-| contr1 (x y : quotient A R) (p q : x=y) : p = q.
+ | qproj : A -> quotient A R
+// relate (x y : A) (h:R x y) : (qproj x) = (qproj y)
+ | contr1 (x y : quotient A R) (p q : x=y) : p = q.
  *)
 
 
 Inductive hpushout {A B C : Type} (f : A -> B) (g : A -> C) : Type :=
   | inl : B -> hpushout f g
   | inr : C -> hpushout f g
-with paths :=
-  | glue (a : A) : (inl (f a)) = (inr (g a)).
+ // glue (a : A) : (inl (f a)) = (inr (g a)).
 Check hpushout_rect.
 (*
 hpushout_rect
