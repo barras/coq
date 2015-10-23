@@ -91,6 +91,45 @@ let pure_stack lfts stk =
                 (l,Zlcase(ci,l,mk_clos e p,Array.map (mk_clos e) br)::pstk)) in
   snd (pure_rec lfts stk)
 
+(* More on comparing stack shapes *)
+
+type 'a stack_match =
+  | Match of 'a
+  | Prefix
+  | Differ of ((stack*stack)*(stack*stack))
+
+let rec eq_stk_elt_shape fmind = function
+  | Zapp l1, Zapp l2 -> Array.length l1=Array.length l2
+  | ZcaseT(ci1,_,_,_), ZcaseT(ci2,_,_,_) ->
+    fmind ci1.ci_ind ci2.ci_ind
+  | Zfix(_,par1), Zfix(_,par2) -> 
+    (match shape_share fmind (par1,par2) with
+    | Match _ -> true
+    | _ -> false)
+  | _ -> false
+
+and shape_share fmind (s1,s2) =
+  (* acc1 and acc2 have same shape; s1 and s2 in reverse order *)
+  let rec eq_stack_shape_rev (acc1,acc2) = function
+    | (Zshift _|Zupdate _ as i1)::s1, s2 ->
+      eq_stack_shape_rev (i1::acc1,acc2) (s1,s2)
+    | s1, (Zshift _|Zupdate _ as i2)::s2 ->
+      eq_stack_shape_rev (acc1,i2::acc2) (s1,s2)
+    | [],[] -> Match ()
+    | Zapp l1::s1, Zapp l2 :: s2 when
+	(Array.length l2 < Array.length l1 && is_empty_stack s2) ||
+	  (Array.length l1 < Array.length l2 && is_empty_stack s1) ->
+      Prefix
+    | i1::s1, i2::s2 ->
+      if eq_stk_elt_shape fmind (i1,i2) then
+	eq_stack_shape_rev (i1::acc1,i2::acc2) (s1,s2)
+      else Differ((List.rev (i1::s1),acc1), (List.rev (i1::s2),acc2))
+    (* one stack is a (shape) prefix of the other one: cannot conclude *)
+    | s1,s2 -> Prefix in
+  (* Compare stack shapes outside-in *)
+  eq_stack_shape_rev ([],[]) (List.rev s1, List.rev s2)
+
+
 (****************************************************************************)
 (*                   Reduction Functions                                    *)
 (****************************************************************************)
@@ -147,8 +186,9 @@ type 'a trans_conversion_function = transparent_state -> env -> 'a -> 'a -> Univ
 
 exception NotConvertible
 exception NotConvertibleVect of int
+exception NotConvertibleStack of ((stack*stack)*(stack*stack))
 
-let compare_stacks f fmind lft1 stk1 lft2 stk2 cuniv =
+let raw_compare_stacks f fmind lft1 stk1 lft2 stk2 cuniv =
   let rec cmp_rec pstk1 pstk2 cuniv =
     match (pstk1,pstk2) with
       | (z1::s1, z2::s2) ->
@@ -169,9 +209,90 @@ let compare_stacks f fmind lft1 stk1 lft2 stk2 cuniv =
             | _ -> assert false in
 	  cmp_rec s1 s2 cu1
       | _ -> cuniv in
+  cmp_rec (pure_stack lft1 stk1) (pure_stack lft2 stk2) cuniv
+
+let compare_stacks f fmind lft1 stk1 lft2 stk2 cuniv =
   if compare_stack_shape stk1 stk2 then
-    cmp_rec (pure_stack lft1 stk1) (pure_stack lft2 stk2) cuniv
+    raw_compare_stacks f fmind lft1 stk1 lft2 stk2 cuniv
   else raise NotConvertible
+
+
+let rec annot_with_lift lfts stk =
+  match stk with
+  | [] -> lfts,[]
+  | zi::s ->
+    let (lfts',s') = annot_with_lift lfts s in
+    let lfts'' =
+      match zi with
+      | Zshift n -> el_shft n lfts'
+      | _ -> lfts' in
+    (lfts'',(lfts',zi)::s')
+
+let rec raw_compare_stacks_share f fmind lft1 s1 lft2 s2 cu =
+  let rec cmp_rec (acc1,acc2) (ofs1,ofs2) (stk1,stk2) cu =
+    match stk1,stk2 with
+      [],[] -> cu
+    | (_,(Zshift _|Zupdate _ as i1))::s1, s2 ->
+      cmp_rec (i1::acc1,acc2) (ofs1,ofs2) (s1,s2)
+    | s1, (_,(Zshift _|Zupdate _ as i2))::s2 ->
+      cmp_rec (acc1,i2::acc2) (ofs1,ofs2) (s1,s2)
+    | (_,(Zapp v1 as i1))::s1, s2 when ofs1 >= Array.length v1 ->
+      cmp_rec (i1::acc1,acc2) (0,ofs2) (s1,s2)
+    | s1, (_,(Zapp v2 as i2))::s2 when ofs2 >= Array.length v2 ->
+      cmp_rec (acc1,i2::acc2) (ofs1,0) (s1,s2)
+    | ((lft1,Zapp v1)::_ as s1, ((lft2,Zapp v2)::_ as s2)) ->
+      let fail() =
+	let (vb1,va1) = array_chop (ofs1+1) v1 in
+	let (vb2,va2) = array_chop (ofs2+1) v2 in
+	raise (NotConvertibleStack
+	  ((List.rev (Zapp vb1::acc1), append_stack va1 (List.map snd s1)),
+	   (List.rev (Zapp vb2::acc2), append_stack va2 (List.map snd s2)))) in
+      let cu1 =
+	try f (lft1,v1.(ofs1)) (lft2,v2.(ofs2)) cu
+	with NotConvertible|NotConvertibleVect _ -> fail() in
+      cmp_rec (acc1,acc2) (ofs1+1,ofs2+1) (s1,s2) cu1
+    | ((lft1,(ZcaseT(ci1,p1,br1,e1) as i1))::s1,
+       (lft2,(ZcaseT(ci2,p2,br2,e2) as i2))::s2) ->
+      let fail() =
+	raise (NotConvertibleStack
+	  ((List.rev(i1::acc1),List.map snd s1),
+	   (List.rev(i2::acc2),List.map snd s2))) in
+      let f' t1 t2 cu =
+	try f (lft1,mk_clos e1 t1) (lft2,mk_clos e2 t2) cu
+	with NotConvertible|NotConvertibleVect _ -> fail() in
+      if not (fmind ci1.ci_ind ci2.ci_ind) then fail();
+      let cu1 = f' p1 p2 cu in
+      let cu2 = array_fold_right2 f' br1 br2 cu1 in
+      cmp_rec (i1::acc1,i2::acc2) (ofs1,ofs2) (s1,s2) cu2
+    | ((lft1,(Zfix(fx1,par1) as i1))::s1,
+       (lft2,(Zfix(fx2,par2) as i2))::s2) ->
+      let fail() =
+	raise (NotConvertibleStack
+	  ((List.rev(i1::acc1),List.map snd s1),
+	   (List.rev(i2::acc2),List.map snd s2))) in
+      let f' t1 t2 cu =
+	try f (lft1,t1) (lft2,t2) cu
+	with NotConvertible|NotConvertibleVect _ -> fail() in
+      let cu1 = f' fx1 fx2 cu in
+      let cu2 =
+	try cmp_rec ([],[]) (0,0)
+	      (snd (annot_with_lift lft1 par1),
+	       snd (annot_with_lift lft2 par2)) cu1
+	with NotConvertibleStack _ -> fail() in
+      cmp_rec (i1::acc1,i2::acc2) (ofs1,ofs2) (s1,s2) cu2
+    | _ -> assert false in
+  (*  assert (shape_share fmind (s1,s2)=Match);*)
+  try Match
+	(cmp_rec ([],[]) (0,0)
+	   (snd (annot_with_lift lft1 s1),
+	    snd (annot_with_lift lft2 s2)) cu)
+  with NotConvertibleStack diff -> Differ diff
+
+let compare_stacks_share f fmind lft1 s1 lft2 s2 cu =
+  match shape_share fmind (s1,s2) with
+  | Match _ -> raw_compare_stacks_share f fmind lft1 s1 lft2 s2 cu
+  | Prefix -> Prefix
+  | Differ diff -> Differ diff
 
 (* Convertibility of sorts *)
 
@@ -374,6 +495,7 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
         else raise NotConvertible
 
     | (FFix ((op1,(_,tys1,cl1)),e1), FFix((op2,(_,tys2,cl2)),e2)) ->
+	(* TODO: compare stack shape first! *)
 	if op1 = op2
 	then
 	  let n = Array.length cl1 in
@@ -389,6 +511,7 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
         else raise NotConvertible
 
     | (FCoFix ((op1,(_,tys1,cl1)),e1), FCoFix((op2,(_,tys2,cl2)),e2)) ->
+	(* TODO: compare stack shape first! *)
         if op1 = op2
         then
 	  let n = Array.length cl1 in

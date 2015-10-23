@@ -769,50 +769,54 @@ and knht e t stk =
 
 (************************************************************************)
 
-(* Computes a weak head normal form from the result of knh. *)
-let rec knr info m stk =
+(* Performs one reduction step *)
+let rec knr_then info m stk more =
   match m.term with
   | FLambda(n,tys,f,e) when red_set info.i_flags fBETA ->
       (match get_args n tys f e stk with
-          Inl e', s -> knit info e' f s
+          Inl e', s -> more (knht e' f s)
         | Inr lam, s -> (lam,s))
   | FFlex(ConstKey kn) when red_set info.i_flags (fCONST kn) ->
       (match ref_value_cache info (ConstKey kn) with
-          Some v -> kni info v stk
+          Some v -> more (knh v stk)
         | None -> (set_norm m; (m,stk)))
   | FFlex(VarKey id) when red_set info.i_flags (fVAR id) ->
       (match ref_value_cache info (VarKey id) with
-          Some v -> kni info v stk
+          Some v -> more (knh v stk)
         | None -> (set_norm m; (m,stk)))
   | FFlex(RelKey k) when red_set info.i_flags fDELTA ->
       (match ref_value_cache info (RelKey k) with
-          Some v -> kni info v stk
+          Some v -> more (knh v stk)
         | None -> (set_norm m; (m,stk)))
   | FConstruct(ind,c) when red_set info.i_flags fIOTA ->
       (match strip_update_shift_app m stk with
         | (depth, args, ZcaseT(ci,_,br,e)::s) ->
             assert (ci.ci_npar>=0);
             let rargs = drop_parameters depth ci.ci_npar args in
-            knit info e br.(c-1) (rargs@s)
+            more (knht e br.(c-1) (rargs@s))
         | (_, cargs, Zfix(fx,par)::s) ->
             let rarg = fapp_stack(m,cargs) in
             let stk' = par @ append_stack [|rarg|] s in
             let (fxe,fxbd) = contract_fix_vect fx.term in
-            knit info fxe fxbd stk'
+            more (knht fxe fxbd stk')
         | (_,args,s) -> (m,args@s))
   | FCoFix _ when red_set info.i_flags fIOTA ->
       (match strip_update_shift_app m stk with
           (_, args, ((ZcaseT _::_) as stk')) ->
             let (fxe,fxbd) = contract_fix_vect m.term in
-            knit info fxe fxbd (args@stk')
+            more (knht fxe fxbd (args@stk'))
         | (_,args,s) -> (m,args@s))
   | FLetIn (_,v,_,bd,e) when red_set info.i_flags fZETA ->
-      knit info (subs_cons([|v|],e)) bd stk
+      more (knht (subs_cons([|v|],e)) bd stk)
   | FEvar(ev,env) ->
       (match evar_value info ev with
-          Some c -> knit info env c stk
+          Some c -> more (knht env c stk)
         | None -> (m,stk))
   | _ -> (m,stk)
+
+(* Computes a weak head normal form from the result of knh. *)
+let rec knr info m stk =
+  knr_then info m stk (fun (m,stk) -> knr info m stk)
 
 (* Computes the weak head normal form of a term *)
 and kni info m stk =
