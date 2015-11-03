@@ -80,3 +80,19 @@ exception NotArity
 
 val dest_arity : env -> types -> arity (* raises NotArity if not an arity *)
 val is_arity   : env -> types -> bool
+
+
+
+
+val consume_stack : clos_infos ->
+           fconstr * stack -> bool * (fconstr * stack)
+type 'a stack_match =
+  | Match of 'a
+  | Prefix
+  | Differ of ((stack*stack)*(stack*stack))
+val compare_stacks_share : (Esubst.lift * Closure.fconstr ->
+            Esubst.lift * Closure.fconstr -> 'a -> 'a) ->
+           (Names.inductive -> Names.inductive -> bool) ->
+           Esubst.lift ->
+           Closure.stack ->
+           Esubst.lift -> Closure.stack -> 'a -> 'a stack_match

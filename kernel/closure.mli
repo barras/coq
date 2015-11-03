@@ -196,6 +196,10 @@ val mk_clos_deep :
 val kni: clos_infos -> fconstr -> stack -> fconstr * stack
 val knr: clos_infos -> fconstr -> stack -> fconstr * stack
 val kl : clos_infos -> fconstr -> constr
+type redex
+val knr_step :
+  clos_infos -> ?reds:reds -> fconstr -> stack -> (redex, fconstr) Util.union * stack
+val knhr : redex * stack -> fconstr * stack
 
 val to_constr : (lift -> fconstr -> constr) -> lift -> fconstr -> constr
 

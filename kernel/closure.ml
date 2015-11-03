@@ -769,54 +769,84 @@ and knht e t stk =
 
 (************************************************************************)
 
+type redex =
+  | Beta of fconstr subs * constr
+  | Zeta of fconstr subs * constr
+  | Delta of fconstr
+  | IotaCase of fconstr subs * constr * stack
+  | IotaFix of fconstr * stack * fconstr
+  | IotaCoFix of fconstr * stack * stack_member
+  | Evar of fconstr subs * constr
+
+let knhr (rdx,s) =
+  match rdx with
+  | Beta(e',f) -> knht e' f s
+  | Zeta(e',f) -> knht e' f s
+  | Delta def -> knh def s
+  | IotaCase(e,br,cargs) -> knht e br (cargs@s)
+  | IotaFix(fx,par,rarg) ->
+     let stk' = par @ append_stack [|rarg|] s in
+     let (fxe,fxbd) = contract_fix_vect fx.term in
+     knht fxe fxbd stk'
+  | IotaCoFix(m,args,cas) ->
+     let stk' = args @ cas :: s in
+     let (fxe,fxbd) = contract_fix_vect m.term in
+     knht fxe fxbd stk'
+  | Evar(e,def) -> knht e def s
+	  
 (* Performs one reduction step *)
-let rec knr_then info m stk more =
+let knr_step info ?(reds=info.i_flags) m stk =
   match m.term with
-  | FLambda(n,tys,f,e) when red_set info.i_flags fBETA ->
+  | FLambda(n,tys,f,e) when red_set reds fBETA ->
       (match get_args n tys f e stk with
-          Inl e', s -> more (knht e' f s)
-        | Inr lam, s -> (lam,s))
-  | FFlex(ConstKey kn) when red_set info.i_flags (fCONST kn) ->
+       | Inl e', s -> (Inl(Beta(e',f)), s)
+       | Inr lam, s -> (Inr lam,s))
+  | FFlex(ConstKey kn) when red_set reds (fCONST kn) ->
       (match ref_value_cache info (ConstKey kn) with
-          Some v -> more (knh v stk)
-        | None -> (set_norm m; (m,stk)))
-  | FFlex(VarKey id) when red_set info.i_flags (fVAR id) ->
+          Some v -> (Inl(Delta v), stk)
+        | None -> (set_norm m; (Inr m,stk)))
+  | FFlex(VarKey id) when red_set reds (fVAR id) ->
       (match ref_value_cache info (VarKey id) with
-          Some v -> more (knh v stk)
-        | None -> (set_norm m; (m,stk)))
-  | FFlex(RelKey k) when red_set info.i_flags fDELTA ->
+          Some v -> (Inl(Delta v), stk)
+        | None -> (set_norm m; (Inr m,stk)))
+  | FFlex(RelKey k) when red_set reds fDELTA ->
       (match ref_value_cache info (RelKey k) with
-          Some v -> more (knh v stk)
-        | None -> (set_norm m; (m,stk)))
-  | FConstruct(ind,c) when red_set info.i_flags fIOTA ->
+          Some v -> (Inl(Delta v), stk)
+        | None -> (set_norm m; (Inr m,stk)))
+  | FConstruct(ind,c) when red_set reds fIOTA ->
       (match strip_update_shift_app m stk with
         | (depth, args, ZcaseT(ci,_,br,e)::s) ->
             assert (ci.ci_npar>=0);
             let rargs = drop_parameters depth ci.ci_npar args in
-            more (knht e br.(c-1) (rargs@s))
+            (Inl(IotaCase(e,br.(c-1),rargs)), s)
         | (_, cargs, Zfix(fx,par)::s) ->
             let rarg = fapp_stack(m,cargs) in
-            let stk' = par @ append_stack [|rarg|] s in
-            let (fxe,fxbd) = contract_fix_vect fx.term in
-            more (knht fxe fxbd stk')
-        | (_,args,s) -> (m,args@s))
-  | FCoFix _ when red_set info.i_flags fIOTA ->
+            (Inl(IotaFix(fx,par,rarg)),s)
+        | (_,args,s) -> (Inr m,args@s))
+  | FCoFix _ when red_set reds fIOTA ->
       (match strip_update_shift_app m stk with
-          (_, args, ((ZcaseT _::_) as stk')) ->
-            let (fxe,fxbd) = contract_fix_vect m.term in
-            more (knht fxe fxbd (args@stk'))
-        | (_,args,s) -> (m,args@s))
-  | FLetIn (_,v,_,bd,e) when red_set info.i_flags fZETA ->
-      more (knht (subs_cons([|v|],e)) bd stk)
+       | (_, args, (ZcaseT _ as itm):: stk') ->
+	  (* It may be inefficient to consider that the Case
+             has been consumed at that point.
+             However, reduction would not occur without it, so it
+             is part of the redex... *)
+	  (Inl(IotaCoFix(m,args,itm)), stk')
+       | (_,args,s) -> (Inr m,args@s))
+  | FLetIn (_,v,_,bd,e) when red_set reds fZETA ->
+      (Inl(Zeta(subs_cons([|v|],e),bd)), stk)
   | FEvar(ev,env) ->
       (match evar_value info ev with
-          Some c -> more (knht env c stk)
-        | None -> (m,stk))
-  | _ -> (m,stk)
+          Some c -> (Inl(Evar(env,c)), stk)
+        | None -> (Inr m,stk))
+  | _ -> (Inr m,stk)
 
 (* Computes a weak head normal form from the result of knh. *)
 let rec knr info m stk =
-  knr_then info m stk (fun (m,stk) -> knr info m stk)
+  match knr_step info m stk with
+  | Inl rdx, stk ->
+     let m',stk' = knhr (rdx, stk) in
+     knr info m' stk'
+  | Inr hd, stk -> (hd,stk)
 
 (* Computes the weak head normal form of a term *)
 and kni info m stk =

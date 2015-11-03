@@ -396,12 +396,20 @@ let compare_stacks_share f s1 s2 =
 
 
 let rec consume_stack env (t,stk as st) =    
+  match reducible env st with
+  | Some (_,[] as rdx) -> (* success *)
+     true, reduce rdx
+  | Some rdx ->
+     consume_stack env (whd_stack (reduce rdx))
+  | None -> false, st (* failed to "consume" all the stack *)
+
+(*let rec consume_stack env (t,stk as st) =    
   if stk=[] then st (* success *)
   else
     match reducible env st with
     | Some rdx -> consume_stack env (whd_stack (reduce rdx))
     | None -> st (* failed to "eat" all the stack *)
-
+ *)
 
 let rec conv env (st1,st2) =
   let (t1,s1 as hd1) = hnf st1 in
@@ -416,11 +424,12 @@ let rec conv env (st1,st2) =
   | Flex((c1,_),(c2,def2)) ->
     let oracle() = conv env (hd1,(def2,s2)) in (* expand c2 *)
     let sync_stacks ((ds1,s1),(ds2,s2)) =
-      (* To ensure eat_stack will make progress... *)
+      (* To ensure consume_stack will make progress... *)
       assert (ds1<>[] && ds2<>[]);
-      (match consume_stack env (t1, ds1), consume_stack env (t2, ds2) with
-      | ((t1,[]),(t2,[])) -> conv env ((t1,s1),(t2,s2))
-      | (st1,st2) -> failure :=(st1,st2); false) in       
+      match consume_stack env (t1, ds1),consume_stack env (t2, ds2) with
+      | (true,(t1',ds1')), (true,(t2',ds2')) ->
+	 conv env ((t1',ds1'@s1),(t2',ds2'@s2))
+      | (_,st1), (_,st2) -> failure := (st1,st2); false in
     if c1=c2 then
       (* First try to compare stacks without expanding c1 *)
       match compare_stacks_share (conv env) s1 s2 with
@@ -531,6 +540,8 @@ let rec conv_k env (st1,st2) k =
     | _,App _ | _, Sw _) -> assert false
   | _ -> fail()
 ;;
+  
+let conv_term env t1 t2 = New.conv env ((t1,[]),(t2,[]))
 
 (* Example *)
 
@@ -549,6 +560,7 @@ let fff =
 
 let env = function
   | "fff" -> Some fff
+  | "Sn" -> Some (App(Cstr 1, Cst"n"))
   | _ -> None
 
 let trm n x = Sw(app(Cst"fff",[|of_int n (Cst"nn");ih|]),[|x|])
@@ -566,3 +578,9 @@ let _ =
 (* stack_overflow *)
 let _ =
   conv env (test 15)
+
+let _ =
+  conv_term
+    env
+    (Sw(Cst"Sn",[|Cst"a";Cst "b"|]))
+    (Sw(Cst"Sn",[|Cst"a'";Cst "b"|]))

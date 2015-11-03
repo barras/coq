@@ -228,19 +228,19 @@ let rec annot_with_lift lfts stk =
       | _ -> lfts' in
     (lfts'',(lfts',zi)::s')
 
-let rec raw_compare_stacks_share f fmind lft1 s1 lft2 s2 cu =
+let raw_compare_stacks_share f fmind lft1 s1 lft2 s2 cu =
   let rec cmp_rec (acc1,acc2) (ofs1,ofs2) (stk1,stk2) cu =
     match stk1,stk2 with
       [],[] -> cu
     | (_,(Zshift _|Zupdate _ as i1))::s1, s2 ->
-      cmp_rec (i1::acc1,acc2) (ofs1,ofs2) (s1,s2)
+      cmp_rec (i1::acc1,acc2) (ofs1,ofs2) (s1,s2) cu
     | s1, (_,(Zshift _|Zupdate _ as i2))::s2 ->
-      cmp_rec (acc1,i2::acc2) (ofs1,ofs2) (s1,s2)
+      cmp_rec (acc1,i2::acc2) (ofs1,ofs2) (s1,s2) cu
     | (_,(Zapp v1 as i1))::s1, s2 when ofs1 >= Array.length v1 ->
-      cmp_rec (i1::acc1,acc2) (0,ofs2) (s1,s2)
+      cmp_rec (i1::acc1,acc2) (0,ofs2) (s1,s2) cu
     | s1, (_,(Zapp v2 as i2))::s2 when ofs2 >= Array.length v2 ->
-      cmp_rec (acc1,i2::acc2) (ofs1,0) (s1,s2)
-    | ((lft1,Zapp v1)::_ as s1, ((lft2,Zapp v2)::_ as s2)) ->
+      cmp_rec (acc1,i2::acc2) (ofs1,0) (s1,s2) cu
+    | ((lft1,Zapp v1)::s1, ((lft2,Zapp v2)::s2)) ->
       let fail() =
 	let (vb1,va1) = array_chop (ofs1+1) v1 in
 	let (vb2,va2) = array_chop (ofs2+1) v2 in
@@ -250,7 +250,7 @@ let rec raw_compare_stacks_share f fmind lft1 s1 lft2 s2 cu =
       let cu1 =
 	try f (lft1,v1.(ofs1)) (lft2,v2.(ofs2)) cu
 	with NotConvertible|NotConvertibleVect _ -> fail() in
-      cmp_rec (acc1,acc2) (ofs1+1,ofs2+1) (s1,s2) cu1
+      cmp_rec (acc1,acc2) (ofs1+1,ofs2+1) (stk1,stk2) cu1
     | ((lft1,(ZcaseT(ci1,p1,br1,e1) as i1))::s1,
        (lft2,(ZcaseT(ci2,p2,br2,e2) as i2))::s2) ->
       let fail() =
@@ -287,7 +287,7 @@ let rec raw_compare_stacks_share f fmind lft1 s1 lft2 s2 cu =
 	   (snd (annot_with_lift lft1 s1),
 	    snd (annot_with_lift lft2 s2)) cu)
   with NotConvertibleStack diff -> Differ diff
-
+					  
 let compare_stacks_share f fmind lft1 s1 lft2 s2 cu =
   match shape_share fmind (s1,s2) with
   | Match _ -> raw_compare_stacks_share f fmind lft1 s1 lft2 s2 cu
@@ -365,21 +365,33 @@ let in_whnf (t,stk) =
     | (FFlex _ | FProd _ | FEvar _ | FInd _ | FAtom _ | FRel _) -> true
     | FLOCKED -> assert false
 
+let rec whd_both infos (t1,stk1) (t2,stk2) =
+  let st1' = whd_stack infos t1 stk1 in
+  let st2' = whd_stack infos t2 stk2 in
+  (* Now, whd_stack on term2 might have modified st1 (due to sharing),
+       and st1 might not be in whnf anymore. If so, we iterate ccnv. *)
+  if in_whnf st1' then (st1',st2') else whd_both infos st1' st2'
+
+let rec consume_stack infos (t,stk as st) =    
+  match knr_step infos ?reds:(Some betadeltaiota) t stk with
+  | Inl rdx, [] -> (* success *)
+     true, knhr (rdx, [])
+  | Inl rdx, stk' ->
+     consume_stack infos (knhr (rdx, stk'))
+  | Inr t', stk' ->
+     false, (t',stk') (* failed to "consume" all the stack *)
+
+
+		     
 (* Conversion between  [lft1]term1 and [lft2]term2 *)
-let rec ccnv cv_pb l2r infos lft1 lft2 term1 term2 cuniv =
+let rec ccnv cv_pb l2r infos (lft1,term1) (lft2,term2) cuniv =
   eqappr cv_pb l2r infos (lft1, (term1,[])) (lft2, (term2,[])) cuniv
 
 (* Conversion between [lft1](hd1 v1) and [lft2](hd2 v2) *)
 and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
   Util.check_for_interrupt ();
   (* First head reduce both terms *)
-  let rec whd_both (t1,stk1) (t2,stk2) =
-    let st1' = whd_stack (snd infos) t1 stk1 in
-    let st2' = whd_stack (snd infos) t2 stk2 in
-    (* Now, whd_stack on term2 might have modified st1 (due to sharing),
-       and st1 might not be in whnf anymore. If so, we iterate ccnv. *)
-    if in_whnf st1' then (st1',st2') else whd_both st1' st2' in
-  let ((hd1,v1),(hd2,v2)) = whd_both st1 st2 in
+  let ((hd1,v1),(hd2,v2)) = whd_both (snd infos) st1 st2 in
   let appr1 = (lft1,(hd1,v1)) and appr2 = (lft2,(hd2,v2)) in
   (* compute the lifts that apply to the head of the term (hd1 and hd2) *)
   let el1 = el_stack lft1 v1 in
@@ -413,29 +425,50 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
 
     (* 2 constants, 2 local defined vars or 2 defined rels *)
     | (FFlex fl1, FFlex fl2) ->
-	(try (* try first intensional equality *)
-	  if eq_table_key fl1 fl2
-          then convert_stacks l2r infos lft1 lft2 v1 v2 cuniv
-          else raise NotConvertible
-        with NotConvertible ->
-          (* else the oracle tells which constant is to be expanded *)
-          let (app1,app2) =
-            if Conv_oracle.oracle_order l2r fl1 fl2 then
-              match unfold_reference infos fl1 with
-                | Some def1 -> ((lft1, whd_stack (snd infos) def1 v1), appr2)
-                | None ->
-                    (match unfold_reference infos fl2 with
-                      | Some def2 -> (appr1, (lft2, whd_stack (snd infos) def2 v2))
-		      | None -> raise NotConvertible)
-            else
-	      match unfold_reference infos fl2 with
-                | Some def2 -> (appr1, (lft2, whd_stack (snd infos) def2 v2))
-                | None ->
-                    (match unfold_reference infos fl1 with
-                    | Some def1 -> ((lft1, whd_stack (snd infos) def1 v1), appr2)
-		    | None -> raise NotConvertible) in
-          eqappr cv_pb l2r infos app1 app2 cuniv)
-
+       let oracle def1 def2 =
+	 let (app1,app2) =
+           if Conv_oracle.oracle_order l2r fl1 fl2 then
+	     ((lft1, whd_stack (snd infos) def1 v1), appr2)
+           else
+	     (appr1, (lft2, whd_stack (snd infos) def2 v2)) in
+	 eqappr cv_pb l2r infos app1 app2 cuniv in
+       let sync_stacks ((ds1,s1),(ds2,s2)) =
+	 (* To ensure consume_stack will make progress... *)
+	 assert (ds1<>[] && ds2<>[]);
+	 (* use oracle and try to consume only on one side? *)
+	 match consume_stack (snd infos) (hd1, ds1), consume_stack (snd infos) (hd2, ds2) with
+	 | (false,_), (false,_) -> raise NotConvertible
+	 | (_,(t1',ds1')),(_,(t2',ds2')) ->
+	    eqappr cv_pb l2r infos
+		   (lft1,(t1',ds1'@s1)) (lft2,(t2',ds2'@s2)) cuniv in
+       if eq_table_key fl1 fl2 then
+	 match unfold_reference infos fl1 with
+	 | Some def ->
+	 (* try first intensional equality *)
+	    (match compare_stacks_share (ccnv CONV l2r infos) eq_ind lft1 v1 lft2 v2 cuniv with
+	     | Match cu -> cu
+	     (* If one stack is a prefix of the other one, no obvious choice *)
+	     | Prefix -> oracle def def
+	     (* if stacks differ at one point, synchronize stacks *)
+	     | Differ diff -> sync_stacks diff)
+	 | None ->
+	    convert_stacks l2r infos lft1 lft2 v1 v2 cuniv
+       else
+	 (match unfold_reference infos fl1, unfold_reference infos fl2 with
+	  | Some def1, Some def2 ->
+	     (match shape_share eq_ind (v1,v2) with
+	      (* If one stack is a prefix of the other one (or equal),
+	         no obvious choice *)
+	      | (Match _|Prefix) -> oracle def1 def2
+	      (* if stacks differ at one point, synchronize stacks *)
+	      | Differ diff -> sync_stacks diff)
+	  | Some def1, None ->
+	     eqappr cv_pb l2r infos
+		    (lft1,whd_stack (snd infos) def1 v1) appr2 cuniv
+	  | None, Some def2 ->
+	     eqappr cv_pb l2r infos
+		    appr1 (lft2,whd_stack (snd infos) def2 v2) cuniv
+	  | None, None -> raise NotConvertible)
     (* other constructors *)
     | (FLambda _, FLambda _) ->
         (* Inconsistency: we tolerate that v1, v2 contain shift and update but
@@ -444,15 +477,15 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
 	  anomaly "conversion was given ill-typed terms (FLambda)";
         let (_,ty1,bd1) = destFLambda mk_clos hd1 in
         let (_,ty2,bd2) = destFLambda mk_clos hd2 in
-        let u1 = ccnv CONV l2r infos el1 el2 ty1 ty2 cuniv in
-        ccnv CONV l2r infos (el_lift el1) (el_lift el2) bd1 bd2 u1
+        let u1 = ccnv CONV l2r infos (el1,ty1) (el2,ty2) cuniv in
+        ccnv CONV l2r infos (el_lift el1, bd1) (el_lift el2, bd2) u1
 
     | (FProd (_,c1,c2), FProd (_,c'1,c'2)) ->
         if not (is_empty_stack v1 && is_empty_stack v2) then
 	  anomaly "conversion was given ill-typed terms (FProd)";
 	(* Luo's system *)
-        let u1 = ccnv CONV l2r infos el1 el2 c1 c'1 cuniv in
-        ccnv cv_pb l2r infos (el_lift el1) (el_lift el2) c2 c'2 u1
+        let u1 = ccnv CONV l2r infos (el1,c1) (el2,c'1) cuniv in
+        ccnv cv_pb l2r infos (el_lift el1, c2) (el_lift el2, c'2) u1
 
     (* Eta-expansion on the fly *)
     | (FLambda _, _) ->
@@ -535,10 +568,7 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
      | _ -> raise NotConvertible
 
 and convert_stacks l2r infos lft1 lft2 stk1 stk2 cuniv =
-  compare_stacks
-    (fun (l1,t1) (l2,t2) c -> ccnv CONV l2r infos l1 l2 t1 t2 c)
-    (eq_ind)
-    lft1 stk1 lft2 stk2 cuniv
+  compare_stacks (ccnv CONV l2r infos) eq_ind lft1 stk1 lft2 stk2 cuniv
 
 and convert_vect l2r infos lft1 lft2 v1 v2 cuniv =
   let lv1 = Array.length v1 in
@@ -548,14 +578,14 @@ and convert_vect l2r infos lft1 lft2 v1 v2 cuniv =
     let rec fold n univ =
       if n >= lv1 then univ
       else
-        let u1 = ccnv CONV l2r infos lft1 lft2 v1.(n) v2.(n) univ in
+        let u1 = ccnv CONV l2r infos (lft1,v1.(n)) (lft2,v2.(n)) univ in
         fold (n+1) u1 in
     fold 0 cuniv
   else raise NotConvertible
 
 let clos_fconv trans cv_pb l2r evars env t1 t2 =
   let infos = trans, create_clos_infos ~evars betaiotazeta env in
-  ccnv cv_pb l2r infos el_id el_id (inject t1) (inject t2) empty_constraint
+  ccnv cv_pb l2r infos (el_id,inject t1) (el_id,inject t2) empty_constraint
 
 let trans_fconv reds cv_pb l2r evars env t1 t2 =
   if eq_constr t1 t2 then empty_constraint
