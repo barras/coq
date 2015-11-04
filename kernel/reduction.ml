@@ -110,13 +110,33 @@ let rec eq_stk_elt_shape fmind = function
 
 and shape_share fmind (s1,s2) =
   (* acc1 and acc2 have same shape; s1 and s2 in reverse order *)
-  let rec eq_stack_shape_rev (acc1,acc2) = function
+  let rec eq_stack_shape_rev bal (acc1,acc2) = function
     | (Zshift _|Zupdate _ as i1)::s1, s2 ->
-      eq_stack_shape_rev (i1::acc1,acc2) (s1,s2)
+      eq_stack_shape_rev bal (i1::acc1,acc2) (s1,s2)
     | s1, (Zshift _|Zupdate _ as i2)::s2 ->
-      eq_stack_shape_rev (acc1,i2::acc2) (s1,s2)
+      eq_stack_shape_rev bal (acc1,i2::acc2) (s1,s2)
     | [],[] -> Match ()
-    | Zapp l1::s1, Zapp l2 :: s2 when
+    | (Zapp l1 as i1)::s1, (Zapp l2 as i2) :: s2 ->
+      if bal + Array.length l1 < Array.length l2 then
+	eq_stack_shape_rev (bal+Array.length l1) (i1::acc1,acc2) (s1,i2::s2)
+      else if bal + Array.length l1 > Array.length l2 then
+	eq_stack_shape_rev (bal-Array.length l2) (acc1,i2::acc2) (i1::s1,s2)
+      else
+	eq_stack_shape_rev 0 (i1::acc1,i2::acc2) (i1::s1,s2)
+    | [], _ -> assert (bal<=0); Prefix
+    | _, [] -> assert (bal>=0); Prefix 
+    | ZcaseT(ci1,_,_,_), ZcaseT(ci2,_,_,_) when fmind ci1.ci_ind ci2.ci_ind ->
+      assert (bal=0);
+      eq_stack_shape_rev 0 (i1::acc1,i2::acc2) (i1::s1,s2)
+
+
+  | Zfix(_,par1), Zfix(_,par2) -> 
+    (match shape_share fmind (par1,par2) with
+    | Match _ -> true
+    | _ -> false)
+	eq_stack_shape_rev (i1::acc1,i2::acc2) (s1,s2)
+
+when
 	(Array.length l2 < Array.length l1 && is_empty_stack s2) ||
 	  (Array.length l1 < Array.length l2 && is_empty_stack s1) ->
       Prefix
@@ -382,6 +402,30 @@ let rec consume_stack infos (t,stk) =
      false, (t',stk') (* failed to "consume" all the stack *)
 
 
+let rec is_intro t =
+  match fterm_of t with
+  | (FCast(t,_,_)|FLIFT(_,t)) -> is_intro t
+  | (FRel _|FAtom _|FFlex _|FInd _|FProd _|FEvar _ ) -> false
+  | (FConstruct _|FFix _|FCoFix _|FLambda _ ) -> true
+  | (FApp _|FCaseT _|FLetIn _|FCLOS _|FLOCKED _) -> assert false
+
+
+let rec (@@) s1 s2 =
+  match s1 with
+    [] -> s2
+  | [Zapp v] -> append_stack v s2
+  | z::s1 -> z::(s1@@s2)
+
+let consume_stack infos (t,stk) =
+  let rec hnf_all (t,stk) =
+    match knr_step infos ?reds:(Some betadeltaiota) t stk with
+    | Inl rdx, stk' -> hnf_all (knhr (rdx, stk'))
+    | Inr t', stk' -> (t',stk') in
+  let it::rstk = List.rev stk in
+  let stk = List.rev rstk in
+  let (t',stk') = hnf_all (t,stk) in
+  (is_intro t',(t',stk'@@[it]))
+
 		     
 (* Conversion between  [lft1]term1 and [lft2]term2 *)
 let rec ccnv cv_pb l2r infos (lft1,term1) (lft2,term2) cuniv =
@@ -436,11 +480,12 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
 	 (* To ensure consume_stack will make progress... *)
 	 assert (ds1<>[] && ds2<>[]);
 	 (* use oracle and try to consume only on one side? *)
-	 match consume_stack (snd infos) (hd1, ds1), consume_stack (snd infos) (hd2, ds2) with
-	 | (false,_), (false,_) -> raise NotConvertible
-	 | (_,(t1',ds1')),(_,(t2',ds2')) ->
-	    eqappr cv_pb l2r infos
-		   (lft1,(t1',ds1'@s1)) (lft2,(t2',ds2'@s2)) cuniv in
+	 let ok2,(t2',ds2') = consume_stack (snd infos) (hd2, ds2) in
+	 let st2' = whd_stack (snd infos) t2' (ds2'@@s2) in
+	 let ok1,(t1',ds1') = consume_stack (snd infos) (hd1, ds1) in
+	 let st1' = whd_stack (snd infos) t1' (ds1'@@s1) in
+	 if ok1||ok2 then eqappr cv_pb l2r infos (lft1,st1') (lft2,st2') cuniv
+	 else raise NotConvertible in
        if eq_table_key fl1 fl2 then
 	 match unfold_reference infos fl1 with
 	 | Some def ->

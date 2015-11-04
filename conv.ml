@@ -81,6 +81,11 @@ let zappl (l,stk) =
     [],_ -> stk
   | _,Zapp l'::stk' -> Zapp (l@l') :: stk'
   | _ -> Zapp l :: stk
+let rec (@@) s1 s2 =
+  match s1 with
+    [] -> s2
+  | [Zapp v] -> zappl(v,s2)
+  | z::s1 -> z::(s1@@s2)
 
 let rec zip f (t, stk) =
   match stk with
@@ -320,10 +325,10 @@ module New = struct
       compare_stacks_share)
    - Prefix means that one stack is a strict prefix of the other one
      (shapewise).
-     (c1,s1@stk) vs (c2,stk')
+     (c1,s1@@stk) vs (c2,stk')
      This means that either c1 may consume s1, or c2 may produce s1.
      So the oracle applies.
-   - Differ (c1,ds1@stk1) vs (c2,ds2@stk2) where
+   - Differ (c1,ds1@@stk1) vs (c2,ds2@@stk2) where
      * stk1 and stk2 have same shape (and their content have *not* been
      compared)
      * ds1 and ds2 differ either by shape or by content of their
@@ -383,8 +388,8 @@ let raw_compare_stacks_share f s1 s2 =
        | Match -> cmp_rec (i1::acc1,i2::acc2) (s1,s2)
        | Prefix -> assert false
        | Differ((dsi1,si1),(dsi2,si2)) ->
-	 Differ((List.rev (dsi1@acc1), si1@s1),
-		(List.rev (dsi2@acc2), si2@s2)))
+	 Differ((List.rev (dsi1@acc1), si1@@s1),
+		(List.rev (dsi2@acc2), si2@@s2)))
     | _ -> assert false in
   assert (shape_share(s1,s2)=Match);
   cmp_rec ([],[]) (s1,s2)
@@ -411,6 +416,33 @@ let rec consume_stack env (t,stk as st) =
     | None -> st (* failed to "eat" all the stack *)
  *)
 
+let alt_consume_stack env (t,stk) =
+  let it::rstk = List.rev stk in
+  let stk = List.rev rstk in
+  let (t',stk') = hnf_all env (t,stk) in
+  match t' with
+  | (Abs _|Cstr _|Fix _) -> (true,(t',stk'@@[it]))
+  | (Sw _|App _) -> assert false
+  | (Ref _| Cst _) -> false,(t',stk'@@[it])
+
+let sync_both_stacks env (t1,t2) ((ds1,s1),(ds2,s2)) =
+  (* To ensure consume_stack will make progress... *)
+  assert (ds1<>[] && ds2<>[]);
+  match alt_consume_stack env (t1, ds1),alt_consume_stack env (t2, ds2) with
+  | (co1,(t1',ds1')), (co2,(t2',ds2')) when co1||co2 ->
+     true, ((t1',ds1'@@s1),(t2',ds2'@@s2))
+  | (_,st1), (_,st2) -> false,(st1,st2)
+
+let alt_sync_both_stacks env (t1,t2) ((ds1,s1),(ds2,s2)) =
+  (* To ensure consume_stack will make progress... *)
+  assert (ds1<>[] && ds2<>[]);
+  let (ok2,(t2',ds2' as st2)) = alt_consume_stack env (t2, ds2) in
+  if ok2 then (true,((t1,ds1@@s1),(t2',ds2'@@s2)))
+  else
+    let (ok1,(t1',ds1' as st1)) = alt_consume_stack env (t1, ds1) in
+    if ok1 then (true,((t1',ds1'@@s1),(t2,ds2@@s2)))
+    else (false,(st1,st2))
+
 let rec conv env (st1,st2) =
   let (t1,s1 as hd1) = hnf st1 in
   let (t2,s2 as hd2) = hnf st2 in
@@ -423,13 +455,10 @@ let rec conv env (st1,st2) =
       else fail()
   | Flex((c1,_),(c2,def2)) ->
     let oracle() = conv env (hd1,(def2,s2)) in (* expand c2 *)
-    let sync_stacks ((ds1,s1),(ds2,s2)) =
-      (* To ensure consume_stack will make progress... *)
-      assert (ds1<>[] && ds2<>[]);
-      match consume_stack env (t1, ds1),consume_stack env (t2, ds2) with
-      | (co1,(t1',ds1')), (co2,(t2',ds2')) when co1||co2 ->
-	 conv env ((t1',ds1'@s1),(t2',ds2'@s2))
-      | (_,st1), (_,st2) -> failure := (st1,st2); false in
+    let sync_stacks diff =
+      let (ok,st) = alt_sync_both_stacks env (t1,t2) diff in
+      if ok then conv env st
+      else (failure := st; false) in
     if c1=c2 then
       (* First try to compare stacks without expanding c1 *)
       match compare_stacks_share (conv env) s1 s2 with
@@ -615,14 +644,15 @@ let _ = New.conv envpe
 
 (* Wf *)
 
-let fix_F = Fix(0,Abs("Fix_F",Abs("a",App(Cst"F",Abs("h",App(Ref 2,app(Cst"Acc_inv",[|Ref 1;Ref 0|])))))))
-let acc_inv = Abs("a",Sw(Ref 0,[|Abs("b",Ref 0)|]))
+let fix_F = Fix(0,Abs("Fix_F",Cst"fxb"))
 
 let envwf = function
   | "Fix_F" -> Some fix_F
-  | "Acc_inv" -> Some acc_inv
+  | "a" -> Some(Cst "b")
   | _ -> None
 
 let _ = New.conv envwf
-  ((App(fix_F,app(Cst"Acc_inv",[|App(Cstr 0,Cst"a");Cst"h"|])),[]),
-  (App(Cst"Fix_F",app(Cst"Acc_inv",[|App(Cstr 0,Cst"a");Cst"h"|])),[]))
+  ((App(fix_F,Cst"a"),[]), (App(Cst"Fix_F",Cst"a"),[]))
+
+let (true,it) =
+  New.alt_consume_stack (fun _ -> Some(Fix(0,Cst""))) (Cst"fx",[Zapp[Ref 0]])
