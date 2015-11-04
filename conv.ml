@@ -328,7 +328,7 @@ module New = struct
      compared)
      * ds1 and ds2 differ either by shape or by content of their
      outermost item. 
-     Thus c1 and c2 *need* to consume at least resp. ds1 and ds2.
+     Thus c1 or c2 *need* to consume at least resp. ds1 and ds2.
 *)
   type stack_match =
   | Match
@@ -345,7 +345,7 @@ module New = struct
     | i1::s1, i2::s2 ->
       if eq_stk_elt_shape(i1,i2) then
 	eq_stack_shape_rev (i1::acc1,i2::acc2) (s1,s2)
-      else Differ((List.rev (i1::s1),acc1), (List.rev (i1::s2),acc2))
+      else Differ((List.rev (i1::s1),acc1), (List.rev (i2::s2),acc2))
     (* one stack is a (shape) prefix of the other one: cannot conclude *)
     | s1,s2 -> Prefix
 
@@ -427,7 +427,7 @@ let rec conv env (st1,st2) =
       (* To ensure consume_stack will make progress... *)
       assert (ds1<>[] && ds2<>[]);
       match consume_stack env (t1, ds1),consume_stack env (t2, ds2) with
-      | (true,(t1',ds1')), (true,(t2',ds2')) ->
+      | (co1,(t1',ds1')), (co2,(t2',ds2')) when co1||co2 ->
 	 conv env ((t1',ds1'@s1),(t2',ds2'@s2))
       | (_,st1), (_,st2) -> failure := (st1,st2); false in
     if c1=c2 then
@@ -584,3 +584,45 @@ let _ =
     env
     (Sw(Cst"Sn",[|Cst"a";Cst "b"|]))
     (Sw(Cst"Sn",[|Cst"a'";Cst "b"|]))
+
+(* Example from Peano.v *)
+
+let plus =
+  Fix(0,Abs("plus",
+	    Abs("n",Abs("m",
+			Sw(Ref 1,[|Ref 0;
+				   Abs("p",App(Cstr 1,
+					       app(Ref 3,[|Ref 0;Ref 1|])))|])))))
+
+let mult =
+  Fix(0,Abs("mult",
+	    Abs("n",Abs("m",
+			Sw(Ref 1,[|Cstr 0;
+				   Abs("p",app(Cst"plus",[|
+				     Ref 1;
+				     app(Ref 3,[|Ref 0;Ref 1|])|]))|])))))
+
+let envpe = function
+  | "plus" -> Some plus
+  | "mult" -> Some mult
+  | _ -> None
+
+let testpe n = app(Cst"mult",[|n;Cstr 0|])
+
+(* test: n*0 convertible to S(n)*0 *)
+let _ = New.conv envpe
+  ((testpe (Cst"n"),[]), (testpe (App(Cstr 1,Cst"n")),[]));;
+
+(* Wf *)
+
+let fix_F = Fix(0,Abs("Fix_F",Abs("a",App(Cst"F",Abs("h",App(Ref 2,app(Cst"Acc_inv",[|Ref 1;Ref 0|])))))))
+let acc_inv = Abs("a",Sw(Ref 0,[|Abs("b",Ref 0)|]))
+
+let envwf = function
+  | "Fix_F" -> Some fix_F
+  | "Acc_inv" -> Some acc_inv
+  | _ -> None
+
+let _ = New.conv envwf
+  ((App(fix_F,app(Cst"Acc_inv",[|App(Cstr 0,Cst"a");Cst"h"|])),[]),
+  (App(Cst"Fix_F",app(Cst"Acc_inv",[|App(Cstr 0,Cst"a");Cst"h"|])),[]))

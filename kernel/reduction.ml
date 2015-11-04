@@ -123,7 +123,7 @@ and shape_share fmind (s1,s2) =
     | i1::s1, i2::s2 ->
       if eq_stk_elt_shape fmind (i1,i2) then
 	eq_stack_shape_rev (i1::acc1,i2::acc2) (s1,s2)
-      else Differ((List.rev (i1::s1),acc1), (List.rev (i1::s2),acc2))
+      else Differ((List.rev (i1::s1),acc1), (List.rev (i2::s2),acc2))
     (* one stack is a (shape) prefix of the other one: cannot conclude *)
     | s1,s2 -> Prefix in
   (* Compare stack shapes outside-in *)
@@ -372,7 +372,7 @@ let rec whd_both infos (t1,stk1) (t2,stk2) =
        and st1 might not be in whnf anymore. If so, we iterate ccnv. *)
   if in_whnf st1' then (st1',st2') else whd_both infos st1' st2'
 
-let rec consume_stack infos (t,stk as st) =    
+let rec consume_stack infos (t,stk) =
   match knr_step infos ?reds:(Some betadeltaiota) t stk with
   | Inl rdx, [] -> (* success *)
      true, knhr (rdx, [])
