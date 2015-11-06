@@ -416,14 +416,16 @@ let rec consume_stack env (t,stk as st) =
     | None -> st (* failed to "eat" all the stack *)
  *)
 
+let is_intro = function
+  | (Abs _|Cstr _|Fix _) -> true
+  | (Sw _|App _) -> assert false
+  | (Ref _| Cst _) -> false
+
 let alt_consume_stack env (t,stk) =
   let it::rstk = List.rev stk in
   let stk = List.rev rstk in
   let (t',stk') = hnf_all env (t,stk) in
-  match t' with
-  | (Abs _|Cstr _|Fix _) -> (true,(t',stk'@@[it]))
-  | (Sw _|App _) -> assert false
-  | (Ref _| Cst _) -> false,(t',stk'@@[it])
+  (is_intro t',(t',stk'@@[it]))
 
 let sync_both_stacks env (t1,t2) ((ds1,s1),(ds2,s2)) =
   (* To ensure consume_stack will make progress... *)
@@ -460,32 +462,15 @@ let rec conv env (st1,st2) =
       if ok then conv env st
       else (failure := st; false) in
     if c1=c2 then
-      (* First try to compare stacks without expanding c1 *)
-      match compare_stacks_share (conv env) s1 s2 with
-      | Match -> true
-      (* If one stack is a prefix of the other one, no obvious choice *)
-      | Prefix -> oracle()
-      (* if stacks differ at one point, synchronize stacks *)
-      | Differ diff -> sync_stacks diff
-    else
-      (match shape_share (s1,s2) with
-      (* If one stack is a prefix of the other one (or equal),
-	 no obvious choice *)
-      | (Match|Prefix) -> oracle()
-      (* if stacks differ at one point, synchronize stacks *)
-      | Differ diff -> sync_stacks diff)
-(*equivalent code:
-    (match shape_share(s1,s2) with
-    | Match ->
-      if c1=c2 then
-	match raw_compare_stacks_share (conv env) s1 s2 with
+      match shape_share (s1,s2) with
+      | Match ->
+	(match raw_compare_stacks_share (conv env) s1 s2 with
 	| Match -> true
-	| Prefix -> assert false
 	| Differ diff -> sync_stacks diff
-      else
-	oracle()
-    | Prefix -> oracle()
-    | Differ diff -> sync_stacks diff)*)
+	| Prefix -> assert false) 
+      | _ -> oracle()
+    else
+      oracle()
   | ReduceLeft (c1,def1) -> conv env ((def1,s1),hd2)
   | ReduceRight (c2,def2) -> conv env (hd1,(def2,s2))
   | Fail -> fail()

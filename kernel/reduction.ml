@@ -98,56 +98,45 @@ type 'a stack_match =
   | Prefix
   | Differ of ((stack*stack)*(stack*stack))
 
-let rec eq_stk_elt_shape fmind = function
-  | Zapp l1, Zapp l2 -> Array.length l1=Array.length l2
-  | ZcaseT(ci1,_,_,_), ZcaseT(ci2,_,_,_) ->
-    fmind ci1.ci_ind ci2.ci_ind
-  | Zfix(_,par1), Zfix(_,par2) -> 
-    (match shape_share fmind (par1,par2) with
-    | Match _ -> true
-    | _ -> false)
-  | _ -> false
-
-and shape_share fmind (s1,s2) =
+let rec shape_share fmind (s1,s2) =
   (* acc1 and acc2 have same shape; s1 and s2 in reverse order *)
+  (* if bal > 0 then s2 has more than bal immediate arguments.
+     if bal < 0 then s1 has more than -bal immediate arguments.
+     And adding these arguments, acc1 and acc2 have the same shape. *)
   let rec eq_stack_shape_rev bal (acc1,acc2) = function
     | (Zshift _|Zupdate _ as i1)::s1, s2 ->
       eq_stack_shape_rev bal (i1::acc1,acc2) (s1,s2)
     | s1, (Zshift _|Zupdate _ as i2)::s2 ->
       eq_stack_shape_rev bal (acc1,i2::acc2) (s1,s2)
-    | [],[] -> Match ()
+    | [],[] -> assert (bal=0); Match ()
+    | [], _ -> assert (bal>=0); Prefix
+    | _, [] -> assert (bal<=0); Prefix 
     | (Zapp l1 as i1)::s1, (Zapp l2 as i2) :: s2 ->
       if bal + Array.length l1 < Array.length l2 then
 	eq_stack_shape_rev (bal+Array.length l1) (i1::acc1,acc2) (s1,i2::s2)
       else if bal + Array.length l1 > Array.length l2 then
 	eq_stack_shape_rev (bal-Array.length l2) (acc1,i2::acc2) (i1::s1,s2)
       else
-	eq_stack_shape_rev 0 (i1::acc1,i2::acc2) (i1::s1,s2)
-    | [], _ -> assert (bal<=0); Prefix
-    | _, [] -> assert (bal>=0); Prefix 
-    | ZcaseT(ci1,_,_,_), ZcaseT(ci2,_,_,_) when fmind ci1.ci_ind ci2.ci_ind ->
+	eq_stack_shape_rev 0 (i1::acc1,i2::acc2) (s1,s2)
+    | ((ZcaseT(ci1,_,_,_) as i1::s1), (ZcaseT(ci2,_,_,_) as i2::s2))
+	when fmind ci1.ci_ind ci2.ci_ind ->
       assert (bal=0);
-      eq_stack_shape_rev 0 (i1::acc1,i2::acc2) (i1::s1,s2)
-
-
-  | Zfix(_,par1), Zfix(_,par2) -> 
-    (match shape_share fmind (par1,par2) with
-    | Match _ -> true
-    | _ -> false)
-	eq_stack_shape_rev (i1::acc1,i2::acc2) (s1,s2)
-
-when
-	(Array.length l2 < Array.length l1 && is_empty_stack s2) ||
-	  (Array.length l1 < Array.length l2 && is_empty_stack s1) ->
-      Prefix
+      eq_stack_shape_rev 0 (i1::acc1,i2::acc2) (s1,s2)
+    | ((Zfix(_,par1) as i1::s1), (Zfix(_,par2) as i2::s2)) ->
+      assert (bal=0);
+      (match shape_share fmind (par1,par2) with
+      | Match _ -> eq_stack_shape_rev 0 (i1::acc1,i2::acc2) (s1,s2)
+      | _ -> Differ((List.rev (i1::s1),acc1), (List.rev (i2::s2),acc2)))
+    | s1, Zapp l2::s2 when bal > 0 ->
+      let bl2,al2 = array_chop bal l2 in
+      Differ((List.rev s1,acc1), (List.rev (Zapp bl2::s2),Zapp al2::acc2))
+    | Zapp l1::s1, s2 when bal < 0 ->
+      let bl1,al1 = array_chop (-bal) l1 in
+      Differ((List.rev (Zapp bl1::s1),Zapp al1::acc1), (List.rev s2,acc2))
     | i1::s1, i2::s2 ->
-      if eq_stk_elt_shape fmind (i1,i2) then
-	eq_stack_shape_rev (i1::acc1,i2::acc2) (s1,s2)
-      else Differ((List.rev (i1::s1),acc1), (List.rev (i2::s2),acc2))
-    (* one stack is a (shape) prefix of the other one: cannot conclude *)
-    | s1,s2 -> Prefix in
+      Differ((List.rev (i1::s1),acc1), (List.rev (i2::s2),acc2)) in
   (* Compare stack shapes outside-in *)
-  eq_stack_shape_rev ([],[]) (List.rev s1, List.rev s2)
+  eq_stack_shape_rev 0 ([],[]) (List.rev s1, List.rev s2)
 
 
 (****************************************************************************)
@@ -407,7 +396,7 @@ let rec is_intro t =
   | (FCast(t,_,_)|FLIFT(_,t)) -> is_intro t
   | (FRel _|FAtom _|FFlex _|FInd _|FProd _|FEvar _ ) -> false
   | (FConstruct _|FFix _|FCoFix _|FLambda _ ) -> true
-  | (FApp _|FCaseT _|FLetIn _|FCLOS _|FLOCKED _) -> assert false
+  | (FApp _|FCaseT _|FLetIn _|FCLOS _|FLOCKED) -> assert false
 
 
 let rec (@@) s1 s2 =
@@ -425,6 +414,17 @@ let consume_stack infos (t,stk) =
   let stk = List.rev rstk in
   let (t',stk') = hnf_all (t,stk) in
   (is_intro t',(t',stk'@@[it]))
+
+let sync_stacks l2r infos (hd1,hd2) ((ds1,s1),(ds2,s2)) =
+  (* To ensure consume_stack will make progress... *)
+  assert (ds1<>[] && ds2<>[]);
+  (* use oracle and try to consume only on one side? *)
+  let ok2,(t2',ds2') = consume_stack infos (hd2, ds2) in
+  let st2' = whd_stack infos t2' (ds2'@@s2) in
+  let ok1,(t1',ds1') = consume_stack infos (hd1, ds1) in
+  let st1' = whd_stack infos t1' (ds1'@@s1) in
+  if ok1||ok2 then (st1',st2')
+  else raise NotConvertible
 
 		     
 (* Conversion between  [lft1]term1 and [lft2]term2 *)
@@ -476,16 +476,10 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
            else
 	     (appr1, (lft2, whd_stack (snd infos) def2 v2)) in
 	 eqappr cv_pb l2r infos app1 app2 cuniv in
-       let sync_stacks ((ds1,s1),(ds2,s2)) =
-	 (* To ensure consume_stack will make progress... *)
-	 assert (ds1<>[] && ds2<>[]);
-	 (* use oracle and try to consume only on one side? *)
-	 let ok2,(t2',ds2') = consume_stack (snd infos) (hd2, ds2) in
-	 let st2' = whd_stack (snd infos) t2' (ds2'@@s2) in
-	 let ok1,(t1',ds1') = consume_stack (snd infos) (hd1, ds1) in
-	 let st1' = whd_stack (snd infos) t1' (ds1'@@s1) in
-	 if ok1||ok2 then eqappr cv_pb l2r infos (lft1,st1') (lft2,st2') cuniv
-	 else raise NotConvertible in
+       let sync diff =
+	 let (app1,app2) = sync_stacks l2r (snd infos) (hd1,hd2) diff in
+	 eqappr cv_pb l2r infos (lft1,app1) (lft2,app2) cuniv
+       in
        if eq_table_key fl1 fl2 then
 	 match unfold_reference infos fl1 with
 	 | Some def ->
@@ -495,18 +489,12 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
 	     (* If one stack is a prefix of the other one, no obvious choice *)
 	     | Prefix -> oracle def def
 	     (* if stacks differ at one point, synchronize stacks *)
-	     | Differ diff -> sync_stacks diff)
+	     | Differ diff -> sync diff)
 	 | None ->
 	    convert_stacks l2r infos lft1 lft2 v1 v2 cuniv
        else
 	 (match unfold_reference infos fl1, unfold_reference infos fl2 with
-	  | Some def1, Some def2 ->
-	     (match shape_share eq_ind (v1,v2) with
-	      (* If one stack is a prefix of the other one (or equal),
-	         no obvious choice *)
-	      | (Match _|Prefix) -> oracle def1 def2
-	      (* if stacks differ at one point, synchronize stacks *)
-	      | Differ diff -> sync_stacks diff)
+	  | Some def1, Some def2 -> oracle def1 def2
 	  | Some def1, None ->
 	     eqappr cv_pb l2r infos
 		    (lft1,whd_stack (snd infos) def1 v1) appr2 cuniv
