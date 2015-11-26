@@ -74,8 +74,7 @@ let mind_check_names mie =
     | ind::inds ->
 	let id = ind.mind_entry_typename in
 	let cl =
-	  ind.mind_entry_consnames @
-	    List.map fst ind.mind_entry_pathcons in
+	  ind.mind_entry_consnames @ ind.mind_entry_pathconsnames in
 	if Idset.mem id indset then
 	  raise (InductiveError (SameNamesTypes id))
 	else
@@ -167,8 +166,7 @@ let constraint_list_union =
 let lift_rel_context n ctxt =
   fst(decompose_prod_assum(lift n (it_mkProd_or_LetIn mkProp ctxt)))
 
-let infer_path_constructor_packet env_ar_par env_ar_par_cstr npar ncstr indpos pc =
-  let (cn,cty) = pc in
+let infer_path_constructor_packet env_ar_par env_ar_par_cstr npar ncstr indpos cn cty =
   let (cargs,lhs,rhs) = cty in
   let (env',pcargs,u,cst') = infer_local_decls env_ar_par_cstr cargs in
   if not (noccur_between 1 ncstr (it_mkProd_or_LetIn mkProp pcargs)) then
@@ -204,7 +202,7 @@ let infer_path_constructor_packet env_ar_par env_ar_par_cstr npar ncstr indpos p
 let context_of_list ln lc =
   List.rev (CList.map2_i (fun i na ty -> (Name na, None, lift i ty)) 0 ln lc)
 
-let infer_constructor_packet env_ar_par params indpos cnames lc lpc =
+let infer_constructor_packet env_ar_par params indpos cnames lc pcnames lpc =
   (* type-check the constructors *)
   let npar = rel_context_length params in
   let ncstr = List.length lc in
@@ -215,9 +213,9 @@ let infer_constructor_packet env_ar_par params indpos cnames lc lpc =
       (context_of_list cnames (List.map (fun j -> j.utj_val) jlc))
       (add_constraints cst env_ar_par) in
   let lpc,cstl =
-    List.split (List.map
+    List.split (List.map2
 		  (infer_path_constructor_packet
-		     env_ar_par env_ar_par_cstr npar ncstr indpos) lpc) in
+		     env_ar_par env_ar_par_cstr npar ncstr indpos) pcnames lpc) in
   let cst = constraint_list_union (cst::cstl) in
   let lpc = Array.of_list lpc in
   let jlc = Array.of_list jlc in
@@ -281,9 +279,12 @@ let typecheck_inductive env mie =
     List.fold_right2
       (fun ind arity_data (indn,inds,cst) ->
 	 let consnames = ind.mind_entry_consnames in
+	 let pathconsnames = ind.mind_entry_pathconsnames in
 	 let (info,lc',lpc',cstrs_univ,cst') =
 	   infer_constructor_packet
-	     env_ar_par params indn consnames ind.mind_entry_lc ind.mind_entry_pathcons in
+	     env_ar_par params indn
+	     consnames ind.mind_entry_lc
+	     pathconsnames ind.mind_entry_pathcons in
 	 let ind' = (arity_data,consnames,info,lc',lpc',cstrs_univ) in
 	 (indn-1,ind'::inds, union_constraints cst cst'))
       mie.mind_entry_inds

@@ -57,6 +57,7 @@ let abstract_inductive hyps nparams inds =
   let ind'' =
   List.map
     (fun (a,arity,c,lc,lpc) ->
+      let pc,lpc = List.split lpc in
       let _, short_arity = decompose_prod_n_assum nparams' arity in
       let shortlc =
 	List.map (fun c -> snd (decompose_prod_n_assum nparams' c)) lc in
@@ -64,6 +65,7 @@ let abstract_inductive hyps nparams inds =
 	mind_entry_arity = short_arity;
 	mind_entry_consnames = c;
 	mind_entry_lc = shortlc;
+	mind_entry_pathconsnames = pc;
 	mind_entry_pathcons = lpc  })
     inds'
   in (params',ind'')

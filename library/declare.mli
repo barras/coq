@@ -84,3 +84,9 @@ val recursive_message : bool (** true = fixpoint *) ->
   int array option -> identifier list -> unit
 
 val exists_name : identifier -> bool
+
+(**)
+val inductive_names :  full_path ->
+           kernel_name ->
+           mutual_inductive_entry ->
+           (full_path * Globnames.global_reference) list

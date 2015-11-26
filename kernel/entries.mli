@@ -44,7 +44,8 @@ type one_inductive_entry = {
   mind_entry_arity : constr;
   mind_entry_consnames : identifier list;
   mind_entry_lc : constr list;
-  mind_entry_pathcons : (identifier *  pathcons_entry) list }
+  mind_entry_pathconsnames : identifier list;
+  mind_entry_pathcons : pathcons_entry list }
 
 type mutual_inductive_entry = {
   mind_entry_record : bool;

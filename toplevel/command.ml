@@ -340,7 +340,10 @@ let interp_mutual_inductive (paramsl,indl) notations finite =
       | (na,LocalDef b) -> (na, LocalDef (nf_evar sigma b))
       | (na,LocalAssum b) -> (na,LocalAssum (nf_evar sigma b)) in
     let nfc (cn,(bl,lhs,rhs)) = (cn,(List.map nfb bl, nf_evar sigma lhs, nf_evar sigma rhs)) in
-    List.map (fun (cl,impsl) -> (List.map nfc cl,impsl)) path_constructors in
+    List.map (fun (cl,impsl) ->
+      let (pcnames,lpc) = List.split (List.map nfc cl) in
+      (pcnames,lpc,impsl))
+      path_constructors in
   let ctx_params = Sign.map_rel_context (nf_evar sigma) ctx_params in
   let arities = List.map (nf_evar sigma) arities in
   List.iter (check_evars env_params Evd.empty evd) arities;
@@ -350,11 +353,12 @@ let interp_mutual_inductive (paramsl,indl) notations finite =
     constructors;
 
   (* Build the inductive entries *)
-  let entries = List.map4 (fun ind arity (cnames,ctypes,cimpls) (lpc,pcimpls) -> {
+  let entries = List.map4 (fun ind arity (cnames,ctypes,cimpls) (pcnames,lpc,pcimpls) -> {
     mind_entry_typename = ind.ind_name;
     mind_entry_arity = arity;
     mind_entry_consnames = cnames;
     mind_entry_lc = ctypes;
+    mind_entry_pathconsnames = pcnames;
     mind_entry_pathcons = lpc
   }) indl arities constructors path_constructors in
   let impls =

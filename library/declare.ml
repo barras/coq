@@ -218,12 +218,12 @@ let inductive_names sp kn mie =
 	     (names, 1) ind.mind_entry_consnames in
 	 let names, _ =
 	   List.fold_left
-	     (fun (names,p) (l,_) ->
+	     (fun (names,p) l ->
 		let sp =
 		  Libnames.make_path dp l
 		in
 		  ((sp, ConstructRef (ind_p,p)) :: names, p+1))
-	     (names, 1+path_offset) ind.mind_entry_pathcons in
+	     (names, 1+path_offset) ind.mind_entry_pathconsnames in
 	 let sp = Libnames.make_path dp ind.mind_entry_typename
 	 in
 	   ((sp, IndRef ind_p) :: names, n+1))
@@ -264,6 +264,7 @@ let dummy_one_inductive_entry mie = {
   mind_entry_arity = mkProp;
   mind_entry_consnames = mie.mind_entry_consnames;
   mind_entry_lc = [];
+  mind_entry_pathconsnames = mie.mind_entry_pathconsnames;
   mind_entry_pathcons = []
 }
 

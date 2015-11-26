@@ -63,6 +63,7 @@ let push_rec_include (s, alias) = includes := (s,alias,true) :: !includes
 
 (* The list of all theories in the standard library /!\ order does matter *)
 let theories_dirs_map = [
+    "theories/Hit", "Hit" ;
     "theories/Unicode", "Unicode" ;
     "theories/Classes", "Classes" ;
     "theories/Program", "Program" ;

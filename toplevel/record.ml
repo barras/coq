@@ -252,6 +252,7 @@ let declare_structure finite infer id idbuild paramimpls params arity fieldimpls
       mind_entry_arity = arity;
       mind_entry_consnames = [idbuild];
       mind_entry_lc = [type_constructor];
+      mind_entry_pathconsnames = [];
       mind_entry_pathcons = [] }
   in
   (* spiwack: raises an error if the structure is supposed to be non-recursive,
