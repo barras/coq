@@ -1,19 +1,6 @@
 (** The menagerie *)
 
-(* Several notations and utility functions *)
-
-Notation "'transp' P e x" := (eq_rect _ P x _ e)
-  (at level 10, P at next level, e at next level, x at next level, no associativity).
-Scheme eq_indd := Induction for eq Sort Prop.
-Lemma eq_rect_cst (A:Type) (x y:A) (e:x=y) (P:Type) (p:P) :
-  transp (fun _ => P) e p = p.
-case e; reflexivity.
-Qed.
-Definition apD {X:Type}{Y:X->Type}(f:forall x:X,Y x){x x':X}(e:x=x')
-   : transp Y e (f x) = f x' :=
-  match e in _=z return eq_rect x Y (f x) z e=f z with
-  | eq_refl => eq_refl (f x)
-  end.
+Require Import Paths.
 
 
 (* Now the HITs *)
@@ -120,11 +107,11 @@ Circle'_rect
 Require Import Program.
 
 Lemma C2C_ob1 : transp (fun _ : Circle' => Circle) upper base = base.
-rewrite eq_rect_cst.
+apply cst_case.
 apply eq_refl.
 Defined.
 Lemma C2C_ob2 : transp (fun _ : Circle' => Circle) lower base = base.
-rewrite eq_rect_cst.
+apply cst_case.
 apply loop.
 Defined.
 
@@ -134,7 +121,7 @@ Definition Circle'2Circle (c:Circle') : Circle :=
 Program Definition Circle2Circle' (c:Circle) : Circle' :=
   Circle_rect (fun _ => Circle') east _ c.
 Next Obligation.
-rewrite eq_rect_cst.
+apply cst_case.
 transitivity west.
  apply lower.
  apply upper.
