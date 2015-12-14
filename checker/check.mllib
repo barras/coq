@@ -24,6 +24,7 @@ Reduction
 Type_errors
 Modops
 Inductive
+Shterm
 Typeops
 Indtypes
 Subtyping
