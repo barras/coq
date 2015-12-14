@@ -326,13 +326,15 @@ let dump_txt_alias f (tbl,alias) =
     tbl;
   close_out oc
 
+
 let dump_sharing () =
   prerr_endline ("TOTAL NUMBER OF SUBTERMS : "^string_of_int !current_session);
   let oc = open_out "sharing.obj" in
   output_value oc !sgn_tab;
   output_value oc !sgn_env_tab;
   close_out oc;
-  dump_txt "sharing.txt" !sgn_tab !sgn_env_tab
+  dump_txt "sharing.txt" !sgn_tab !sgn_env_tab;
+  prerr_endline "Wrote sharing.txt"
 
 let load_sharing () =
   let ic = open_in "sharing.obj" in
@@ -342,8 +344,6 @@ let load_sharing () =
   prerr_endline "input file read";
   sgn_tab := sgn;
   sgn_env_tab := esgn
-
-let _ = at_exit dump_sharing
 
 (*
 let redump () =
@@ -355,13 +355,23 @@ let _=redump()
 *)
 
 (* manque env tbl *)
-let redump_norm () =
-  load_sharing(); 
+let compute_norm () =
   let rtbl = reverse_table !sgn_tab in
   prerr_endline "signature table reversed";
   let (ntbl,alias) = norm_sign rtbl in
   prerr_endline "signature table normalized";
   dump_txt_alias "normsharing.txt" (ntbl,alias)
+
+
+let redump_norm () =
+  load_sharing();
+  compute_norm()
+
+let dump_all () =
+  dump_sharing();
+  compute_norm ()
+
+let _ = at_exit dump_all
 
 (*let _ = redump_norm()*)
 (*
