@@ -36,6 +36,8 @@ open Environ;;
 open Declarations;;
 open Mod_checking;;
 
+let _ = Shterm.top := true;;
+
 let pr_id id = str(string_of_id id)
 let pr_na = function Name id -> pr_id id | _ -> str"_";;
 let prdp dp = pp(str(string_of_dirpath dp));;

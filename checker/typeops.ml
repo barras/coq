@@ -373,12 +373,12 @@ and execute_array env = Array.map (execute env)
 (* Derived functions *)
 let infer env constr =
   let j = execute env constr in
-  Shterm.share constr;
+  Shterm.share_judge env (constr,j);
   j
 
 let infer_type env constr =
   let j = execute_type env constr in
-  Shterm.share constr;
+  Shterm.share_judge env (constr,Sort j);
   j
 
 (* Typing of several terms. *)

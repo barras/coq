@@ -28,6 +28,7 @@ let full_add_module dp mb digest =
   let env = !genv in
   let env = add_constraints mb.mod_constraints env in
   let env = Modops.add_module mb env in
+  let _ = Shterm.share_module_body env mb in
   genv := add_digest env dp digest
 
 (* Check that the engagement expected by a library matches the initial one *)
