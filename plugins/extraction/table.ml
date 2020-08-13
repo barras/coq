@@ -230,7 +230,6 @@ let add_opaque r = opaques := Refset'.add r !opaques
 let remove_opaque r = opaques := Refset'.remove r !opaques
 
 (*s Extraction modes: modular or monolithic, library or minimal ?
-
 Nota:
  - Recursive Extraction : monolithic, minimal
  - Separate Extraction : modular, minimal

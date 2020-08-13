@@ -16,6 +16,8 @@ open Miniml
 open Table
 open Mlutil
 
+let tydummy = Tdummy Kother (*ITODO*)
+
 (*S Functions upon ML modules. *)
 
 (** Note: a syntax like [(F M) with ...] is actually legal, see for instance
@@ -100,7 +102,7 @@ let ast_iter_references do_term do_cons do_type a =
   let rec iter a =
     ast_iter iter a;
     match a with
-      | MLglob r -> do_term r
+      | MLglob (r,_) -> do_term r
       | MLcons (_,r,_) -> do_cons r
       | MLcase (ty,_,v) ->
         type_iter_references do_type ty;
@@ -257,11 +259,11 @@ let dfix_to_mlfix rv av i =
   let s = make_subst (Array.length rv - 1) Refmap'.empty
   in
   let rec subst n t = match t with
-    | MLglob ((GlobRef.ConstRef kn) as refe) ->
-        (try MLrel (n + (Refmap'.find refe s)) with Not_found -> t)
+    | MLglob ((GlobRef.ConstRef kn) as refe, _) ->
+        (try MLrel (n + (Refmap'.find refe s),[](*ITODO*)) with Not_found -> t)
     | _ -> ast_map_lift subst n t
   in
-  let ids = Array.map (fun r -> Label.to_id (label_of_r r)) rv in
+  let ids = Array.map (fun r -> Label.to_id (label_of_r r),tydummy(*ITODO*)) rv in
   let c = Array.map (subst 0) av
   in MLfix(i, ids, c)
 
@@ -278,7 +280,7 @@ let rec optim_se top to_appear s = function
       if i then s := Refmap'.add r a !s;
       let d = match dump_unused_vars (optimize_fix a) with
         | MLfix (0, _, [|c|]) ->
-          Dfix ([|r|], [|ast_subst (MLglob r) c|], [|t|])
+          Dfix ([|r|], [|ast_subst (MLglob (r,[](*ITODO*))) c|], [|t|])
         | a -> Dterm (r, a, t)
       in
       (l,SEdecl d) :: (optim_se top to_appear s lse)
@@ -415,4 +417,5 @@ let optimize_struct to_appear struc =
       end
   in
   let () = check_for_remaining_implicits mini_struc in
+  mini_struc
   mini_struc

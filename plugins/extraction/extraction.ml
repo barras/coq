@@ -30,6 +30,8 @@ open Mlutil
 open Context.Rel.Declaration
 (*i*)
 
+let tydummy = Tdummy Kother(*ITODO*)
+
 exception I of inductive_kind
 
 (* A set of all fixpoint functions currently being extracted *)
@@ -548,7 +550,6 @@ and extract_really_ind env kn mib =
 
 (*s [extract_type_cons] extracts the type of an inductive
   constructor toward the corresponding list of ML types.
-
    - [db] is a context for translating Coq [Rel] into ML type [Tvar]
    - [dbmap] is a translation map (produced by a call to [parse_in_args])
    - [i] is the rank of the current product (initially [params_nb+1])
@@ -639,7 +640,7 @@ let rec extract_term env sg mle mlt c args =
                (* If [mlt] cannot be unified with an arrow type, then magic! *)
                let magic = needs_magic (mlt, Tarr (a, b)) in
                let d' = extract_term env' sg (Mlenv.push_type mle a) b d [] in
-               put_magic_if magic (MLlam (id, d')))
+               put_magic magic (MLlam (id, a, d')))
     | LetIn (n, c1, t1, c2) ->
         let id = map_annot id_of_name n in
         let env' = EConstr.push_rel (LocalDef (map_annot Name.mk_name id, c1, t1)) env in
@@ -656,7 +657,10 @@ let rec extract_term env sg mle mlt c args =
             then Mlenv.push_gen mle a
             else Mlenv.push_type mle a
           in
-          MLletin (Id id.binder_name, c1', extract_term env' sg mle' mlt c2 args')
+                        let (i,mlty) = Mlenv.peek mle' 0 in
+                        ignore (needs_magic (a, mlty));
+                        (* === *)
+                        MLletin (Id id.binder_name, (i,mlty), c1', extract_term env' sg mle' mlt c2 args')
         with NotDefault d ->
           let mle' = Mlenv.push_std_type mle (Tdummy d) in
           ast_pop (extract_term env' sg mle' mlt c2 args'))
@@ -670,7 +674,9 @@ let rec extract_term env sg mle mlt c args =
     | Rel n ->
         (* As soon as the expected [mlt] for the head is known, *)
         (* we unify it with an fresh copy of the stored type of [Rel n]. *)
-        let extract_rel mlt = put_magic (mlt, Mlenv.get mle n) (MLrel n)
+                let extract_rel mlt =
+                        let mlt', ts = Mlenv.get_with_instantiated_types mle n in
+                        put_magic_ifneeds (mlt, mlt') (MLrel (n, ts))
         in extract_app env sg mle mlt extract_rel args
     | Case ({ci_ind=ip},_,iv,c0,br) ->
       (* If invert_case then this is a match that will get erased later, but right now we don't care. *)
@@ -707,7 +713,7 @@ and extract_maybe_term env sg mle mlt c =
   try check_default env sg (type_of env sg c);
     extract_term env sg mle mlt c []
   with NotDefault d ->
-    put_magic (mlt, Tdummy d) (MLdummy d)
+    put_magic_ifneeds (mlt, Tdummy d) MLdummy
 
 (*s Generic way to deal with an application. *)
 
@@ -740,10 +746,10 @@ and extract_cst_app env sg mle mlt kn args =
   let schema = nb, expand env t in
   (* Can we instantiate types variables for this constant ? *)
   (* In Ocaml, inside the definition of this constant, the answer is no. *)
-  let instantiated =
+  let (instantiated,ty_args) =
     if lang () == Ocaml && List.mem_f Constant.equal kn !current_fixpoints
-    then var2var' (snd schema)
-    else instantiation schema
+    then (var2var' (snd schema), [])
+    else instantiation' schema
   in
   (* Then the expected type of this constant. *)
   let a = new_meta () in
@@ -754,7 +760,7 @@ and extract_cst_app env sg mle mlt kn args =
   (* Second, is the resulting type compatible with the expected type [mlt] ? *)
   let magic2 = needs_magic (a, mlt) in
   (* The internal head receives a magic if [magic1] *)
-  let head = put_magic_if magic1 (MLglob (GlobRef.ConstRef kn)) in
+  let head = put_magic magic1 (MLglob (GlobRef.ConstRef kn, List.rev ty_args)) in
   (* Now, the extraction of the arguments. *)
   let s_full = type2signature env (snd schema) in
   let s_full = sign_with_implicits (GlobRef.ConstRef kn) s_full 0 in
@@ -775,7 +781,8 @@ and extract_cst_app env sg mle mlt kn args =
   then
     (* Enough args, cleanup already done in [mla], we only add the
        additional dummy if needed. *)
-    put_magic_if (magic2 && not magic1) (mlapp head (optdummy @ mla))
+        put_magic_if (not (is_magical magic1)) (magic2)
+                (mlapp head (optdummy @ mla))
   else
     (* Partially applied function with some logical arg missing.
        We complete via eta and expunge logical args. *)
@@ -783,7 +790,7 @@ and extract_cst_app env sg mle mlt kn args =
     let s' = List.skipn la s in
     let mla = (List.map (ast_lift ls') mla) @ (eta_args_sign ls' s') in
     let e = anonym_or_dummy_lams (mlapp head mla) s' in
-    put_magic_if magic2 (remove_n_lams (List.length optdummy) e)
+    put_magic magic2 (remove_n_lams (List.length optdummy) e)
 
 (*s Extraction of an inductive constructor applied to arguments. *)
 
@@ -821,29 +828,29 @@ and extract_cons_app env sg mle mlt (((kn,i) as ip,j) as cp) args =
   let magic2 = needs_magic (a, mlt) in
   let head mla =
     if mi.ind_kind == Singleton then
-      put_magic_if magic1 (List.hd mla) (* assert (List.length mla = 1) *)
+      put_magic magic1 (List.hd mla) (* assert (List.length mla = 1) *)
     else
       let typeargs = match snd (type_decomp type_cons) with
         | Tglob (_,l) -> List.map type_simpl l
         | _ -> assert false
       in
       let typ = Tglob(GlobRef.IndRef ip, typeargs) in
-      put_magic_if magic1 (MLcons (typ, GlobRef.ConstructRef cp, mla))
+      put_magic magic1 (MLcons (typ, GlobRef.ConstructRef cp, mla))
   in
   (* Different situations depending of the number of arguments: *)
   if la < params_nb then
     let head' = head (eta_args_sign ls s) in
-    put_magic_if magic2
+    put_magic magic2
       (dummy_lams (anonym_or_dummy_lams head' s) (params_nb - la))
   else
     let mla = make_mlargs env sg mle s args' metas in
     if Int.equal la (ls + params_nb)
-    then put_magic_if (magic2 && not magic1) (head mla)
+    then put_magic_if (not (is_magical magic1)) (magic2) (head mla)
     else (* [ params_nb <= la <= ls + params_nb ] *)
       let ls' = params_nb + ls - la in
       let s' = List.lastn ls' s in
       let mla = (List.map (ast_lift ls') mla) @ (eta_args_sign ls' s') in
-      put_magic_if magic2 (anonym_or_dummy_lams (head mla) s')
+      put_magic magic2 (anonym_or_dummy_lams (head mla) s')
 
 (*S Extraction of a case. *)
 
@@ -900,7 +907,7 @@ and extract_case env sg mle ((kn,i) as ip,c,br) mlt =
           assert (Int.equal br_size 1);
           let (ids,_,e') = extract_branch 0 in
           assert (Int.equal (List.length ids) 1);
-          MLletin (tmp_id (List.hd ids),a,e')
+          MLletin (tmp_id (List.hd ids), (0,tydummy)(*ITODO*), a,e')
         end
       else
         (* Standard case: we apply [extract_branch]. *)
@@ -916,7 +923,8 @@ and extract_fix env sg mle i (fi,ti,ci as recd) mlt =
   metas.(i) <- mlt;
   let mle = Array.fold_left Mlenv.push_type mle metas in
   let ei = Array.map2 (extract_maybe_term env sg mle) metas ci in
-  MLfix (i, Array.map (fun x -> id_of_name x.binder_name) fi, ei)
+  let idtys = array_map2 (fun f meta -> ((fun x -> id_of_name x.binder_name) f, meta)) fi metas in
+  MLfix (i, idtys, ei)
 
 (*S ML declarations. *)
 
@@ -992,13 +1000,13 @@ let extract_std_constant env sg kn body typ =
   (* The initial ML environment. *)
   let mle = List.fold_left Mlenv.push_std_type Mlenv.empty l in
   (* The lambdas names. *)
-  let ids = List.map (fun (n,_) -> Id (id_of_name n.binder_name)) rels in
+  let ids = List.map (fun (mlty,(n,_)) -> (Id (id_of_name n.binder_name), mlty)) (List.combine (List.rev l) rels) in
   (* The according Coq environment. *)
   let env = push_rels_assum rels env in
   (* The real extraction: *)
   let e = extract_term env sg mle t' c [] in
   (* Expunging term and type from dummy lambdas. *)
-  let trm = term_expunge s (ids,e) in
+  let trm = term_expunge' s (ids,e) in
   trm, type_expunge_from_sign env s t
 
 (* Extracts the type of an axiom, honors the Extraction Implicit declaration. *)

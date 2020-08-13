@@ -67,7 +67,7 @@ let pp_global k r = str (Common.pp_global k r)
 let rec pp_expr env args =
   let apply st = pp_apply st true args in
   function
-    | MLrel n ->
+    | MLrel (n,_) ->
         let id = get_db_name n env in apply (pr_id id)
     | MLapp (f,args') ->
         let stl = List.map (pp_expr env []) args' in
@@ -76,7 +76,7 @@ let rec pp_expr env args =
         let fl,a' = collect_lams a in
         let fl,env' = push_vars (List.map id_of_mlid fl) env in
         apply (pp_abst (pp_expr env' [] a') (List.rev fl))
-    | MLletin (id,a1,a2) ->
+    | MLletin (id,_,a1,a2) ->
         let i,env' = push_vars [id_of_mlid id] env in
         apply
           (hv 0
@@ -87,7 +87,7 @@ let rec pp_expr env args =
                       (paren
                          (pr_id (List.hd i) ++ spc () ++ pp_expr env [] a1))
                     ++ spc () ++ hov 0 (pp_expr env' [] a2)))))
-    | MLglob r ->
+    | MLglob (r,_) ->
         apply (pp_global Term r)
     | MLcons (_,r,args') ->
         assert (List.is_empty args);
@@ -118,7 +118,8 @@ let rec pp_expr env args =
           else paren (str "force" ++ spc () ++ pp_expr env [] t)
         in
         apply (v 3 (paren (str "match " ++ e ++ fnl () ++ pp_pat env pv)))
-    | MLfix (i,ids,defs) ->
+    | MLfix (i,idtys,defs) ->
+                let ids = Array.map fst idtys in
         let ids',env' = push_vars (List.rev (Array.to_list ids)) env in
         pp_fix env' i (Array.of_list (List.rev ids'),defs) args
     | MLexn s ->
@@ -126,7 +127,7 @@ let rec pp_expr env args =
         paren (str "error" ++ spc () ++ qs s)
     | MLdummy _ ->
         str "__" (* An [MLdummy] may be applied, but I don't really care. *)
-    | MLmagic a ->
+    | MLmagic (a,_) ->
         pp_expr env args a
     | MLaxiom -> paren (str "error \"AXIOM TO BE REALIZED\"")
     | MLuint _ ->

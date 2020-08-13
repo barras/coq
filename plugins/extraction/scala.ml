@@ -1,787 +1,308 @@
-(************************************************************************)
-(*         *   The Coq Proof Assistant / The Coq Development Team       *)
-(*  v      *         Copyright INRIA, CNRS and contributors             *)
-(* <O___,, * (see version control and CREDITS file for authors & dates) *)
-(*   \VV/  **************************************************************)
-(*    //   *    This file is distributed under the terms of the         *)
-(*         *     GNU Lesser General Public License Version 2.1          *)
-(*         *     (see LICENSE file for the text of the license)         *)
-(************************************************************************)
-
-(*s Production of Ocaml syntax. *)
-
-open Pp
-open CErrors
-open Util
-open Names
-open ModPath
-open Table
-open Miniml
-open Mlutil
-open Modutil
-open Common
-
-
-(*s Some utility functions. *)
-
-let pp_tvar id = str ("'" ^ Id.to_string id)
-
-let pp_abst = function
-  | [] -> mt ()
-  | l  ->
-      str "fun " ++ prlist_with_sep (fun () -> str " ") Id.print l ++
-      str " ->" ++ spc ()
-
-let pp_parameters l =
-  (pp_boxed_tuple pp_tvar l ++ space_if (not (List.is_empty l)))
-
-let pp_string_parameters l =
-  (pp_boxed_tuple str l ++ space_if (not (List.is_empty l)))
-
-let pp_letin pat def body =
-  let fstline = str "let " ++ pat ++ str " =" ++ spc () ++ def in
-  hv 0 (hv 0 (hov 2 fstline ++ spc () ++ str "in") ++ spc () ++ hov 0 body)
-
-(*s Ocaml renaming issues. *)
-
-let keywords =
-  List.fold_right (fun s -> Id.Set.add (Id.of_string s))
-  [ "and"; "as"; "assert"; "begin"; "class"; "constraint"; "do";
-    "done"; "downto"; "else"; "end"; "exception"; "external"; "false";
-    "for"; "fun"; "function"; "functor"; "if"; "in"; "include";
-    "inherit"; "initializer"; "lazy"; "let"; "match"; "method";
-    "module"; "mutable"; "new"; "object"; "of"; "open"; "or";
-    "parser"; "private"; "rec"; "sig"; "struct"; "then"; "to"; "true";
-    "try"; "type"; "val"; "virtual"; "when"; "while"; "with"; "mod";
-    "land"; "lor"; "lxor"; "lsl"; "lsr"; "asr" ; "unit" ; "_" ; "__" ]
-  Id.Set.empty
-
-(* Note: do not shorten [str "foo" ++ fnl ()] into [str "foo\n"],
-   the '\n' character interacts badly with the Format boxing mechanism *)
-
-let pp_open mp = str ("open "^ string_of_modfile mp) ++ fnl ()
-
-let pp_comment s = str "(* " ++ hov 0 s ++ str " *)"
-
-let pp_header_comment = function
-  | None -> mt ()
-  | Some com -> pp_comment com ++ fnl2 ()
-
-let then_nl pp = if Pp.ismt pp then mt () else pp ++ fnl ()
-
-let pp_tdummy usf =
-  if usf.tdummy || usf.tunknown then str "type __ = Obj.t" ++ fnl () else mt ()
-
-let pp_mldummy usf =
-  if usf.mldummy then
-    str "let __ = let rec f _ = Obj.repr f in Obj.repr f" ++ fnl ()
-  else mt ()
-
-let preamble _ comment used_modules usf =
-  pp_header_comment comment ++
-  then_nl (prlist pp_open used_modules) ++
-  then_nl (pp_tdummy usf ++ pp_mldummy usf)
-
-let sig_preamble _ comment used_modules usf =
-  pp_header_comment comment ++
-  then_nl (prlist pp_open used_modules) ++
-  then_nl (pp_tdummy usf)
-
-(*s The pretty-printer for Ocaml syntax*)
-
-(* Beware of the side-effects of [pp_global] and [pp_modname].
-   They are used to update table of content for modules. Many [let]
-   below should not be altered since they force evaluation order.
-*)
-
-let str_global k r =
-  if is_inline_custom r then find_custom r else Common.pp_global k r
-
-let pp_global k r = str (str_global k r)
-
-let pp_modname mp = str (Common.pp_module mp)
-
-(* grammar from OCaml 4.06 manual, "Prefix and infix symbols" *)
-
-let infix_symbols =
-  ['=' ; '<' ; '>' ; '@' ; '^' ; ';' ; '&' ; '+' ; '-' ; '*' ; '/' ; '$' ; '%' ]
-let operator_chars =
-  [ '!' ; '$' ; '%' ; '&' ; '*' ; '+' ; '-' ; '.' ; '/' ; ':' ; '<' ; '=' ; '>' ; '?' ; '@' ; '^' ; '|' ; '~' ]
-
-(* infix ops in OCaml, but disallowed by preceding grammar *)
-
-let builtin_infixes =
-  [ "::" ; "," ]
-
-let substring_all_opchars s start stop =
-  let rec check_char i =
-    if i >= stop then true
-    else
-      List.mem s.[i] operator_chars && check_char (i+1)
-  in
-  check_char start
-
-let is_infix r =
-  is_inline_custom r &&
-  (let s = find_custom r in
-   let len = String.length s in
-   len >= 3 &&
-   (* parenthesized *)
-   (s.[0] == '(' && s.[len-1] == ')' &&
-      let inparens = String.trim (String.sub s 1 (len - 2)) in
-      let inparens_len = String.length inparens in
-      (* either, begins with infix symbol, any remainder is all operator chars *)
-      (List.mem inparens.[0] infix_symbols && substring_all_opchars inparens 1 inparens_len) ||
-      (* or, starts with #, at least one more char, all are operator chars *)
-      (inparens.[0] == '#' && inparens_len >= 2 && substring_all_opchars inparens 1 inparens_len) ||
-      (* or, is an OCaml built-in infix *)
-      (List.mem inparens builtin_infixes)))
-
-let get_infix r =
-  let s = find_custom r in
-  String.sub s 1 (String.length s - 2)
-
-let get_ind = let open GlobRef in function
-  | IndRef _ as r -> r
-  | ConstructRef (ind,_) -> IndRef ind
-  | _ -> assert false
-
-let pp_one_field r i = function
-  | Some r -> pp_global Term r
-  | None -> pp_global Type (get_ind r) ++ str "__" ++ int i
-
-let pp_field r fields i = pp_one_field r i (List.nth fields i)
-
-let pp_fields r fields = List.map_i (pp_one_field r) 0 fields
-
-(*s Pretty-printing of types. [par] is a boolean indicating whether parentheses
-    are needed or not. *)
-
-let pp_type par vl t =
-  let rec pp_rec par = function
-    | Tmeta _ | Tvar' _ | Taxiom -> assert false
-    | Tvar i -> (try pp_tvar (List.nth vl (pred i))
-                 with Failure _ -> (str "'a" ++ int i))
-    | Tglob (r,[a1;a2]) when is_infix r ->
-        pp_par par (pp_rec true a1 ++ str (get_infix r) ++ pp_rec true a2)
-    | Tglob (r,[]) -> pp_global Type r
-    | Tglob (gr,l)
-        when not (keep_singleton ()) && GlobRef.equal gr (sig_type_ref ()) ->
-        pp_tuple_light pp_rec l
-    | Tglob (r,l) ->
-        pp_tuple_light pp_rec l ++ spc () ++ pp_global Type r
-    | Tarr (t1,t2) ->
-        pp_par par
-          (pp_rec true t1 ++ spc () ++ str "->" ++ spc () ++ pp_rec false t2)
-    | Tdummy _ -> str "__"
-    | Tunknown -> str "__"
-  in
-  hov 0 (pp_rec par t)
-
-(*s Pretty-printing of expressions. [par] indicates whether
-    parentheses are needed or not. [env] is the list of names for the
-    de Bruijn variables. [args] is the list of collected arguments
-    (already pretty-printed). *)
-
-let is_bool_patt p s =
-  try
-    let r = match p with
-      | Pusual r -> r
-      | Pcons (r,[]) -> r
-      | _ -> raise Not_found
-    in
-    String.equal (find_custom r) s
-  with Not_found -> false
-
-
-let is_ifthenelse = function
-  | [|([],p1,_);([],p2,_)|] -> is_bool_patt p1 "true" && is_bool_patt p2 "false"
-  | _ -> false
-
-let expr_needs_par = function
-  | MLlam _  -> true
-  | MLcase (_,_,[|_|]) -> false
-  | MLcase (_,_,pv) -> not (is_ifthenelse pv)
-  | _        -> false
-
-let rec pp_expr par env args =
-  let apply st = pp_apply st par args
-  and apply2 st = pp_apply2 st par args in
-  function
-    | MLrel n ->
-        let id = get_db_name n env in
-        (* Try to survive to the occurrence of a Dummy rel.
-           TODO: we should get rid of this hack (cf. #592) *)
-        let id = if Id.equal id dummy_name then Id.of_string "__" else id in
-        apply (Id.print id)
-    | MLapp (f,args') ->
-        let stl = List.map (pp_expr true env []) args' in
-        pp_expr par env (stl @ args) f
-    | MLlam _ as a ->
-        let fl,a' = collect_lams a in
-        let fl = List.map id_of_mlid fl in
-        let fl,env' = push_vars fl env in
-        let st = pp_abst (List.rev fl) ++ pp_expr false env' [] a' in
-        apply2 st
-    | MLletin (id,a1,a2) ->
-        let i,env' = push_vars [id_of_mlid id] env in
-        let pp_id = Id.print (List.hd i)
-        and pp_a1 = pp_expr false env [] a1
-        and pp_a2 = pp_expr (not par && expr_needs_par a2) env' [] a2 in
-        hv 0 (apply2 (pp_letin pp_id pp_a1 pp_a2))
-    | MLglob r -> apply (pp_global Term r)
-    | MLfix (i,ids,defs) ->
-        let ids',env' = push_vars (List.rev (Array.to_list ids)) env in
-        pp_fix par env' i (Array.of_list (List.rev ids'),defs) args
-    | MLexn s ->
-        (* An [MLexn] may be applied, but I don't really care. *)
-        pp_par par (str "assert false" ++ spc () ++ str ("(* "^s^" *)"))
-    | MLdummy k ->
-        (* An [MLdummy] may be applied, but I don't really care. *)
-        (match msg_of_implicit k with
-         | "" -> str "__"
-         | s -> str "__" ++ spc () ++ str ("(* "^s^" *)"))
-    | MLmagic a ->
-        pp_apply (str "Obj.magic") par (pp_expr true env [] a :: args)
-    | MLaxiom ->
-        pp_par par (str "failwith \"AXIOM TO BE REALIZED\"")
-    | MLcons (_,r,a) as c ->
-        assert (List.is_empty args);
-        begin match a with
-          | _ when is_native_char c -> pp_native_char c
-          | _ when is_native_string c -> pp_native_string c
-          | [a1;a2] when is_infix r ->
-            let pp = pp_expr true env [] in
-            pp_par par (pp a1 ++ str (get_infix r) ++ pp a2)
-          | _ when is_coinductive r ->
-            let ne = not (List.is_empty a) in
-            let tuple = space_if ne ++ pp_tuple (pp_expr true env []) a in
-            pp_par par (str "lazy " ++ pp_par ne (pp_global Cons r ++ tuple))
-          | [] -> pp_global Cons r
-          | _ ->
-            let fds = get_record_fields r in
-            if not (List.is_empty fds) then
-              pp_record_pat (pp_fields r fds, List.map (pp_expr true env []) a)
-            else
-              let tuple = pp_tuple (pp_expr true env []) a in
-              if String.is_empty (str_global Cons r) (* hack Extract Inductive prod *)
-              then tuple
-              else pp_par par (pp_global Cons r ++ spc () ++ tuple)
-        end
-    | MLtuple l ->
-        assert (List.is_empty args);
-        pp_boxed_tuple (pp_expr true env []) l
-    | MLcase (_, t, pv) when is_custom_match pv ->
-        if not (is_regular_match pv) then
-          user_err Pp.(str "Cannot mix yet user-given match and general patterns.");
-        let mkfun (ids,_,e) =
-          if not (List.is_empty ids) then named_lams (List.rev ids) e
-          else dummy_lams (ast_lift 1 e) 1
-        in
-        let pp_branch tr = pp_expr true env [] (mkfun tr) ++ fnl () in
-        let inner =
-          str (find_custom_match pv) ++ fnl () ++
-          prvect pp_branch pv ++
-          pp_expr true env [] t
-        in
-        apply2 (hov 2 inner)
-    | MLcase (typ, t, pv) ->
-        let head =
-          if not (is_coinductive_type typ) then pp_expr false env [] t
-          else (str "Lazy.force" ++ spc () ++ pp_expr true env [] t)
-        in
-        (* First, can this match be printed as a mere record projection ? *)
-        (try pp_record_proj par env typ t pv args
-         with Impossible ->
-           (* Second, can this match be printed as a let-in ? *)
-           if Int.equal (Array.length pv) 1 then
-             let s1,s2 = pp_one_pat env pv.(0) in
-             hv 0 (apply2 (pp_letin s1 head s2))
-           else
-             (* Third, can this match be printed as [if ... then ... else] ? *)
-             (try apply2 (pp_ifthenelse env head pv)
-              with Not_found ->
-                (* Otherwise, standard match *)
-                apply2
-                  (v 0 (str "match " ++ head ++ str " with" ++ fnl () ++
-                        pp_pat env pv))))
-    | MLuint i ->
-        assert (args=[]);
-        str "(" ++ str (Uint63.compile i) ++ str ")"
-    | MLfloat f ->
-        assert (args=[]);
-        str "(" ++ str (Float64.compile f) ++ str ")"
-    | MLparray(t,def) ->
-      assert (args=[]);
-      let tuple = pp_array (pp_expr true env []) (Array.to_list t) in
-      let def = pp_expr true env [] def in
-      str "(ExtrNative.of_array [|" ++ tuple ++ str "|]" ++ spc () ++ def ++ str")"
-
-
-and pp_record_proj par env typ t pv args =
-  (* Can a match be printed as a mere record projection ? *)
-  let fields = record_fields_of_type typ in
-  if List.is_empty fields then raise Impossible;
-  if not (Int.equal (Array.length pv) 1) then raise Impossible;
-  if has_deep_pattern pv then raise Impossible;
-  let (ids,pat,body) = pv.(0) in
-  let n = List.length ids in
-  let no_patvar a = not (List.exists (ast_occurs_itvl 1 n) a) in
-  let rel_i,a = match body with
-    | MLrel i | MLmagic(MLrel i) when i <= n -> i,[]
-    | MLapp(MLrel i, a) | MLmagic(MLapp(MLrel i, a))
-      | MLapp(MLmagic(MLrel i), a) when i<=n && no_patvar a -> i,a
-    | _ -> raise Impossible
-  in
-  let magic =
-    match body with MLmagic _ | MLapp(MLmagic _, _) -> true | _ -> false
-  in
-  let rec lookup_rel i idx = function
-    | Prel j :: l -> if Int.equal i j then idx else lookup_rel i (idx+1) l
-    | Pwild :: l -> lookup_rel i (idx+1) l
-    | _ -> raise Impossible
-  in
-  let r,idx = match pat with
-    | Pusual r -> r, n-rel_i
-    | Pcons (r,l) -> r, lookup_rel rel_i 0 l
-    | _ -> raise Impossible
-  in
-  if is_infix r then raise Impossible;
-  let env' = snd (push_vars (List.rev_map id_of_mlid ids) env) in
-  let pp_args = (List.map (pp_expr true env' []) a) @ args in
-  let pp_head = pp_expr true env [] t ++ str "." ++ pp_field r fields idx
-  in
-  if magic then
-    pp_apply (str "Obj.magic") par (pp_head :: pp_args)
-  else
-    pp_apply pp_head par pp_args
-
-and pp_record_pat (fields, args) =
-   str "{ " ++
-   prlist_with_sep (fun () -> str ";" ++ spc ())
-     (fun (f,a) -> f ++ str " =" ++ spc () ++ a)
-     (List.combine fields args) ++
-   str " }"
-
-and pp_cons_pat r ppl =
-  if is_infix r && Int.equal (List.length ppl) 2 then
-    List.hd ppl ++ str (get_infix r) ++ List.hd (List.tl ppl)
-  else
-    let fields = get_record_fields r in
-    if not (List.is_empty fields) then pp_record_pat (pp_fields r fields, ppl)
-    else if String.is_empty (str_global Cons r) then
-      pp_boxed_tuple identity ppl (* Hack Extract Inductive prod *)
-    else
-      pp_global Cons r ++ space_if (not (List.is_empty ppl)) ++ pp_boxed_tuple identity ppl
-
-and pp_gen_pat ids env = function
-  | Pcons (r, l) -> pp_cons_pat r (List.map (pp_gen_pat ids env) l)
-  | Pusual r -> pp_cons_pat r (List.map Id.print ids)
-  | Ptuple l -> pp_boxed_tuple (pp_gen_pat ids env) l
-  | Pwild -> str "_"
-  | Prel n -> Id.print (get_db_name n env)
-
-and pp_ifthenelse env expr pv = match pv with
-  | [|([],tru,the);([],fal,els)|] when
-      (is_bool_patt tru "true") && (is_bool_patt fal "false")
-      ->
-      hv 0 (hov 2 (str "if " ++ expr) ++ spc () ++
-            hov 2 (str "then " ++
-                   hov 2 (pp_expr (expr_needs_par the) env [] the)) ++ spc () ++
-            hov 2 (str "else " ++
-                   hov 2 (pp_expr (expr_needs_par els) env [] els)))
-  | _ -> raise Not_found
-
-and pp_one_pat env (ids,p,t) =
-  let ids',env' = push_vars (List.rev_map id_of_mlid ids) env in
-  pp_gen_pat (List.rev ids') env' p,
-  pp_expr (expr_needs_par t) env' [] t
-
-and pp_pat env pv =
-  prvecti
-    (fun i x ->
-       let s1,s2 = pp_one_pat env x in
-       hv 2 (hov 4 (str "| " ++ s1 ++ str " ->") ++ spc () ++ hov 2 s2) ++
-       if Int.equal i (Array.length pv - 1) then mt () else fnl ())
-    pv
-
-and pp_function env t =
-  let bl,t' = collect_lams t in
-  let bl,env' = push_vars (List.map id_of_mlid bl) env in
-  match t' with
-    | MLcase(Tglob(r,_),MLrel 1,pv) when
-        not (is_coinductive r) && List.is_empty (get_record_fields r) &&
-        not (is_custom_match pv) ->
-        if not (ast_occurs 1 (MLcase(Tunknown,MLaxiom,pv))) then
-          pr_binding (List.rev (List.tl bl)) ++
-          str " = function" ++ fnl () ++
-          v 0 (pp_pat env' pv)
-        else
-          pr_binding (List.rev bl) ++
-          str " = match " ++ Id.print (List.hd bl) ++ str " with" ++ fnl () ++
-          v 0 (pp_pat env' pv)
-    | _ ->
-          pr_binding (List.rev bl) ++
-          str " =" ++ fnl () ++ str "  " ++
-          hov 2 (pp_expr false env' [] t')
-
-(*s names of the functions ([ids]) are already pushed in [env],
-    and passed here just for convenience. *)
-
-and pp_fix par env i (ids,bl) args =
-  pp_par par
-    (v 0 (str "let rec " ++
-          prvect_with_sep
-            (fun () -> fnl () ++ str "and ")
-            (fun (fi,ti) -> Id.print fi ++ pp_function env ti)
-            (Array.map2 (fun id b -> (id,b)) ids bl) ++
-          fnl () ++
-          hov 2 (str "in " ++ pp_apply (Id.print ids.(i)) false args)))
-
-(* Ad-hoc double-newline in v boxes, with enough negative whitespace
-   to avoid indenting the intermediate blank line *)
-
-let cut2 () = brk (0,-100000) ++ brk (0,0)
-
-let pp_val e typ =
-  hov 4 (str "val " ++ e ++ str " :" ++ spc () ++ pp_type false [] typ)  ++ cut2 ()
-
-(*s Pretty-printing of [Dfix] *)
-
-let pp_Dfix (rv,c,t) =
-  let names = Array.map
-    (fun r -> if is_inline_custom r then mt () else pp_global Term r) rv
-  in
-  let rec pp init i =
-    if i >= Array.length rv then mt ()
-    else
-      let void = is_inline_custom rv.(i) ||
-        (not (is_custom rv.(i)) &&
-         match c.(i) with MLexn "UNUSED" -> true | _ -> false)
-      in
-      if void then pp init (i+1)
-      else
-        let def =
-          if is_custom rv.(i) then str " = " ++ str (find_custom rv.(i))
-          else pp_function (empty_env ()) c.(i)
-        in
-        (if init then mt () else cut2 ()) ++
-        pp_val names.(i) t.(i) ++
-        str (if init then "let rec " else "and ") ++ names.(i) ++ def ++
-        pp false (i+1)
-  in pp true 0
-
-(*s Pretty-printing of inductive types declaration. *)
-
-let pp_equiv param_list name = function
-  | NoEquiv, _ -> mt ()
-  | Equiv kn, i ->
-      str " = " ++ pp_parameters param_list ++ pp_global Type (GlobRef.IndRef (MutInd.make1 kn,i))
-  | RenEquiv ren, _  ->
-      str " = " ++ pp_parameters param_list ++ str (ren^".") ++ name
-
-
-let pp_one_ind prefix ip_equiv pl name cnames ctyps =
-  let pl = rename_tvars keywords pl in
-  let pp_constructor i typs =
-    (if Int.equal i 0 then mt () else fnl ()) ++
-    hov 3 (str "| " ++ cnames.(i) ++
-           (if List.is_empty typs then mt () else str " of ") ++
-           prlist_with_sep
-            (fun () -> spc () ++ str "* ") (pp_type true pl) typs)
-  in
-  pp_parameters pl ++ str prefix ++ name ++
-  pp_equiv pl name ip_equiv ++ str " =" ++
-  if Int.equal (Array.length ctyps) 0 then str " unit (* empty inductive *)"
-  else fnl () ++ v 0 (prvecti pp_constructor ctyps)
-
-let pp_logical_ind packet =
-  pp_comment (Id.print packet.ip_typename ++ str " : logical inductive") ++
-  fnl () ++
-  pp_comment (str "with constructors : " ++
-              prvect_with_sep spc Id.print packet.ip_consnames) ++
-  fnl ()
-
-let pp_singleton kn packet =
-  let name = pp_global Type (GlobRef.IndRef (kn,0)) in
-  let l = rename_tvars keywords packet.ip_vars in
-  hov 2 (str "type " ++ pp_parameters l ++ name ++ str " =" ++ spc () ++
-         pp_type false l (List.hd packet.ip_types.(0)) ++ fnl () ++
-         pp_comment (str "singleton inductive, whose constructor was " ++
-                     Id.print packet.ip_consnames.(0)))
-
-let pp_record kn fields ip_equiv packet =
-  let ind = GlobRef.IndRef (kn,0) in
-  let name = pp_global Type ind in
-  let fieldnames = pp_fields ind fields in
-  let l = List.combine fieldnames packet.ip_types.(0) in
-  let pl = rename_tvars keywords packet.ip_vars in
-  str "type " ++ pp_parameters pl ++ name ++
-  pp_equiv pl name ip_equiv ++ str " = { "++
-  hov 0 (prlist_with_sep (fun () -> str ";" ++ spc ())
-           (fun (p,t) -> p ++ str " : " ++ pp_type true pl t) l)
-  ++ str " }"
-
-let pp_coind pl name =
-  let pl = rename_tvars keywords pl in
-  pp_parameters pl ++ name ++ str " = " ++
-  pp_parameters pl ++ str "__" ++ name ++ str " Lazy.t" ++
-  fnl() ++ str "and "
-
-let pp_ind co kn ind =
-  let prefix = if co then "__" else "" in
-  let initkwd = str "type " in
-  let nextkwd = fnl () ++ str "and " in
-  let names =
-    Array.mapi (fun i p -> if p.ip_logical then mt () else
-                  pp_global Type (GlobRef.IndRef (kn,i)))
-      ind.ind_packets
-  in
-  let cnames =
-    Array.mapi
-      (fun i p -> if p.ip_logical then [||] else
-         Array.mapi (fun j _ -> pp_global Cons (GlobRef.ConstructRef ((kn,i),j+1)))
-           p.ip_types)
-      ind.ind_packets
-  in
-  let rec pp i kwd =
-    if i >= Array.length ind.ind_packets then mt ()
-    else
-      let ip = (kn,i) in
-      let ip_equiv = ind.ind_equiv, i in
-      let p = ind.ind_packets.(i) in
-      if is_custom (GlobRef.IndRef ip) then pp (i+1) kwd
-      else if p.ip_logical then pp_logical_ind p ++ pp (i+1) kwd
-      else
-        kwd ++ (if co then pp_coind p.ip_vars names.(i) else mt ()) ++
-        pp_one_ind prefix ip_equiv p.ip_vars names.(i) cnames.(i) p.ip_types ++
-        pp (i+1) nextkwd
-  in
-  pp 0 initkwd
-
-
-(*s Pretty-printing of a declaration. *)
-
-let pp_mind kn i =
-  match i.ind_kind with
-    | Singleton -> pp_singleton kn i.ind_packets.(0)
-    | Coinductive -> pp_ind true kn i
-    | Record fields -> pp_record kn fields (i.ind_equiv,0) i.ind_packets.(0)
-    | Standard -> pp_ind false kn i
-
-let pp_decl = function
-    | Dtype (r,_,_) when is_inline_custom r -> mt ()
-    | Dterm (r,_,_) when is_inline_custom r -> mt ()
-    | Dind (kn,i) -> pp_mind kn i
-    | Dtype (r, l, t) ->
-        let name = pp_global Type r in
-        let l = rename_tvars keywords l in
-        let ids, def =
-          try
-            let ids,s = find_type_custom r in
-            pp_string_parameters ids, str " =" ++ spc () ++ str s
-          with Not_found ->
-            pp_parameters l,
-            if t == Taxiom then str " (* AXIOM TO BE REALIZED *)"
-            else str " =" ++ spc () ++ pp_type false l t
-        in
-        hov 2 (str "type " ++ ids ++ name ++ def)
-    | Dterm (r, a, t) ->
-        let def =
-          if is_custom r then str (" = " ^ find_custom r)
-          else pp_function (empty_env ()) a
-        in
-        let name = pp_global Term r in
-        pp_val name t ++ hov 0 (str "def " ++ name ++ def ++ mt ())
-    | Dfix (rv,defs,typs) ->
-        pp_Dfix (rv,defs,typs)
-
-let pp_spec = function
-  | Sval (r,_) when is_inline_custom r -> mt ()
-  | Stype (r,_,_) when is_inline_custom r -> mt ()
-  | Sind (kn,i) -> pp_mind kn i
-  | Sval (r,t) ->
-      let def = pp_type false [] t in
-      let name = pp_global Term r in
-      hov 2 (str "val " ++ name ++ str " :" ++ spc () ++ def)
-  | Stype (r,vl,ot) ->
-      let name = pp_global Type r in
-      let l = rename_tvars keywords vl in
-      let ids, def =
-        try
-          let ids, s = find_type_custom r in
-          pp_string_parameters ids, str " =" ++ spc () ++ str s
-        with Not_found ->
-          let ids = pp_parameters l in
-          match ot with
-            | None -> ids, mt ()
-            | Some Taxiom -> ids, str " (* AXIOM TO BE REALIZED *)"
-            | Some t -> ids, str " =" ++ spc () ++ pp_type false l t
-      in
-      hov 2 (str "type " ++ ids ++ name ++ def)
-
-let rec pp_specif = function
-  | (_,Spec (Sval _ as s)) -> pp_spec s
-  | (l,Spec s) ->
-     (match Common.get_duplicate (top_visible_mp ()) l with
-      | None -> pp_spec s
-      | Some ren ->
-         hov 1 (str ("module "^ren^" : sig") ++ fnl () ++ pp_spec s) ++
-         fnl () ++ str "end" ++ fnl () ++
-         str ("include module type of struct include "^ren^" end"))
-  | (l,Smodule mt) ->
-      let def = pp_module_type [] mt in
-      let name = pp_modname (MPdot (top_visible_mp (), l)) in
-      hov 1 (str "module " ++ name ++ str " :" ++ fnl () ++ def) ++
-      (match Common.get_duplicate (top_visible_mp ()) l with
-       | None -> Pp.mt ()
-       | Some ren ->
-         fnl () ++
-         hov 1 (str ("module "^ren^" :") ++ spc () ++
-                str "module type of struct include " ++ name ++ str " end"))
-  | (l,Smodtype mt) ->
-      let def = pp_module_type [] mt in
-      let name = pp_modname (MPdot (top_visible_mp (), l)) in
-      hov 1 (str "module type " ++ name ++ str " =" ++ fnl () ++ def) ++
-      (match Common.get_duplicate (top_visible_mp ()) l with
-       | None -> Pp.mt ()
-       | Some ren -> fnl () ++ str ("module type "^ren^" = ") ++ name)
-
-and pp_module_type params = function
-  | MTident kn ->
-      pp_modname kn
-  | MTfunsig (mbid, mt, mt') ->
-      let typ = pp_module_type [] mt in
-      let name = pp_modname (MPbound mbid) in
-      let def = pp_module_type (MPbound mbid :: params) mt' in
-      str "functor (" ++ name ++ str ":" ++ typ ++ str ") ->" ++ fnl () ++ def
-  | MTsig (mp, sign) ->
-      push_visible mp params;
-      let try_pp_specif l x =
-        let px = pp_specif x in
-        if Pp.ismt px then l else px::l
-      in
-      (* We cannot use fold_right here due to side effects in pp_specif *)
-      let l = List.fold_left try_pp_specif [] sign in
-      let l = List.rev l in
-      pop_visible ();
-      str "sig" ++ fnl () ++
-      (if List.is_empty l then mt ()
-       else
-         v 1 (str " " ++ prlist_with_sep cut2 identity l) ++ fnl ())
-      ++ str "end"
-  | MTwith(mt,ML_With_type(idl,vl,typ)) ->
-      let ids = pp_parameters (rename_tvars keywords vl) in
-      let mp_mt = msid_of_mt mt in
-      let l,idl' = List.sep_last idl in
-      let mp_w =
-        List.fold_left (fun mp l -> MPdot(mp,Label.of_id l)) mp_mt idl'
-      in
-      let r = GlobRef.ConstRef (Constant.make2 mp_w (Label.of_id l)) in
-      push_visible mp_mt [];
-      let pp_w = str " with type " ++ ids ++ pp_global Type r in
-      pop_visible();
-      pp_module_type [] mt ++ pp_w ++ str " = " ++ pp_type false vl typ
-  | MTwith(mt,ML_With_module(idl,mp)) ->
-      let mp_mt = msid_of_mt mt in
-      let mp_w =
-        List.fold_left (fun mp id -> MPdot(mp,Label.of_id id)) mp_mt idl
-      in
-      push_visible mp_mt [];
-      let pp_w = str " with module " ++ pp_modname mp_w in
-      pop_visible ();
-      pp_module_type [] mt ++ pp_w ++ str " = " ++ pp_modname mp
-
-let is_short = function MEident _ | MEapply _ -> true | _ -> false
-
-let rec pp_structure_elem = function
-  | (l,SEdecl d) ->
-     (match Common.get_duplicate (top_visible_mp ()) l with
-      | None -> pp_decl d
-      | Some ren ->
-         hov 1 (str ("module "^ren^" = struct") ++ fnl () ++ pp_decl d) ++
-         fnl () ++ str "end" ++ fnl () ++ str ("include "^ren))
-  | (l,SEmodule m) ->
-      let typ =
-        (* virtual printing of the type, in order to have a correct mli later*)
-        if Common.get_phase () == Pre then
-          str ": " ++ pp_module_type [] m.ml_mod_type
-        else mt ()
-      in
-      let def = pp_module_expr [] m.ml_mod_expr in
-      let name = pp_modname (MPdot (top_visible_mp (), l)) in
-      hov 1
-        (str "module " ++ name ++ typ ++ str " =" ++
-         (if is_short m.ml_mod_expr then spc () else fnl ()) ++ def) ++
-      (match Common.get_duplicate (top_visible_mp ()) l with
-       | Some ren -> fnl () ++ str ("module "^ren^" = ") ++ name
-       | None -> mt ())
-  | (l,SEmodtype m) ->
-      let def = pp_module_type [] m in
-      let name = pp_modname (MPdot (top_visible_mp (), l)) in
-      hov 1 (str "module type " ++ name ++ str " =" ++ fnl () ++ def) ++
-      (match Common.get_duplicate (top_visible_mp ()) l with
-       | None -> mt ()
-       | Some ren -> fnl () ++ str ("module type "^ren^" = ") ++ name)
-
-and pp_module_expr params = function
-  | MEident mp -> pp_modname mp
-  | MEapply (me, me') ->
-      pp_module_expr [] me ++ str "(" ++ pp_module_expr [] me' ++ str ")"
-  | MEfunctor (mbid, mt, me) ->
-      let name = pp_modname (MPbound mbid) in
-      let typ = pp_module_type [] mt in
-      let def = pp_module_expr (MPbound mbid :: params) me in
-      str "functor (" ++ name ++ str ":" ++ typ ++ str ") ->" ++ fnl () ++ def
-  | MEstruct (mp, sel) ->
-      push_visible mp params;
-      let try_pp_structure_elem l x =
-        let px = pp_structure_elem x in
-        if Pp.ismt px then l else px::l
-      in
-      (* We cannot use fold_right here due to side effects in pp_structure_elem *)
-      let l = List.fold_left try_pp_structure_elem [] sel in
-      let l = List.rev l in
-      pop_visible ();
-      str "struct" ++ fnl () ++
-      (if List.is_empty l then mt ()
-       else
-         v 1 (str " " ++ prlist_with_sep cut2 identity l) ++ fnl ())
-      ++ str "end"
-
-let rec prlist_sep_nonempty sep f = function
-  | [] -> mt ()
-  | [h] -> f h
-  | h::t ->
-     let e = f h in
-     let r = prlist_sep_nonempty sep f t in
-     if Pp.ismt e then r
-     else e ++ sep () ++ r
-
-let do_struct f s =
-  let ppl (mp,sel) =
-    push_visible mp [];
-    let p = prlist_sep_nonempty cut2 f sel in
-    (* for monolithic extraction, we try to simulate the unavailability
-       of [MPfile] in names by artificially nesting these [MPfile] *)
-    (if modular () then pop_visible ()); p
-  in
-  let p = prlist_sep_nonempty cut2 ppl s in
-  (if not (modular ()) then repeat (List.length s) pop_visible ());
-  v 0 p ++ fnl ()
-
-let pp_struct s = do_struct pp_structure_elem s
-
-let pp_signature s = do_struct pp_specif s
-
-let scala_descr = {
-  keywords = keywords;
-  file_suffix = ".scala";
-  file_naming = file_of_modfile;
-  preamble = preamble;
-  pp_struct = pp_struct;
-  sig_suffix = None;
-  sig_preamble = sig_preamble;
-  pp_sig = pp_signature;
-  pp_decl = pp_decl;
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033{\fonttbl{\f0\fnil\fcharset0 Calibri;}{\f1\fnil Calibri;}{\f2\fnil\fcharset238 Calibri;}}
+{\colortbl ;\red0\green0\blue255;}
+{\*\generator Riched20 10.0.14393}\viewkind4\uc1
+\pard\sa200\sl276\slmult1\f0\fs22\lang9 open Pp             (* lib/pp.ml4 *)\par
+open Util           (* lib/util.ml *)\par
+module N = Names    (* kernel/names.ml *)\par
+module No = Nameops (* library/nameops.ml *) \par
+module L = Libnames (* library/libnames.ml *)\par
+\par
+module T = Table\par
+open Miniml\par
+module MU = Mlutil\par
+module C = Common\par
+\par
+let (!%) = Printf.sprintf\par
+let ($) g f x = g (f x)\par
+let p = print_endline\par
+let slist f xs = String.concat ";" (List.map f xs)\par
+let sarray f xs = slist f (Array.to_list xs)\par
+let id x = x\par
+let list_mapi f = Array.to_list $ Array.mapi f $ Array.of_list\par
+let tryo f x = try Some (f x) with _ -> None\par
+let string1 = String.make 1\par
+let (|>) x f = f x\par
+let (--) a b =\par
+  let rec iter store a bi =\par
+    if a = bi then bi::store\par
+    else iter (bi::store) a (bi - 1)\par
+  in\par
+  if a <= b then iter [] a b\par
+  else List.rev (iter [] b a)\par
+\par
+(* see Scala language specification: {{\field{\*\fldinst{HYPERLINK http://www.scala-lang.org/sites/default/files/linuxsoft_archives/docu/files/ScalaReference.pdf }}{\fldrslt{http://www.scala-lang.org/sites/default/files/linuxsoft_archives/docu/files/ScalaReference.pdf\ul0\cf0}}}}\f0\fs22  *)\par
+let keywords =\par
+  List.fold_right (fun s -> N.Idset.add (N.id_of_string s))\par
+  [ "abstract"; "do"; "finally"; "import"; "object"; "return"; "trait"; "var"; \par
+    "_"; "case"; "else"; "for"; "lazy"; "override"; "sealed"; "try"; "while";\par
+    "catch"; "extends"; "forSome"; "match"; "package"; "super"; "true"; "with";\par
+    "class"; "false"; "if"; "new"; "private"; "this"; "type"; "yield"; "def";\par
+    "final"; "implicit"; "null"; "protected"; "throw"; "val"; ]\par
+  N.Idset.empty\par
+\par
+let preamble mod_name used_modules usf = str ""\par
+\par
+let prarray_with_sep pp f xs = prlist_with_sep pp f (Array.to_list xs)\par
+let prlist_with_comma f xs = prlist_with_sep (fun () -> str ", ") f xs\par
+let prlist_with_space f xs = prlist_with_sep (fun () -> str " ") f xs\par
+\par
+let pp_global k r =\par
+  if T.is_inline_custom r then str (T.find_custom r)\par
+  else str (Common.pp_global k r)\par
+\par
+let pr_id id =\par
+  let s = N.string_of_id id in\par
+  let ss = List.map (function | "\\'" -> "$prime" | c -> c) (explode s) in\par
+  str (String.concat "" ss)\par
+\par
+let free_type_vars typ =\par
+  let module S = Set.Make(struct type t = int let compare = compare end) in\par
+  let rec iter = function\par
+    | Tmeta _ | Tvar' _ -> S.empty\par
+    | Tvar (i:int) ->  S.singleton i\par
+    | Tglob ((r: L.global_reference), (l: ml_type list)) ->\par
+\tab List.fold_left (fun store typ ->\par
+\tab   S.union store (iter typ)) S.empty l\par
+    | Tarr (t1,t2) ->\par
+\tab S.union (iter t1) (iter t2)\par
+    | Tdummy _\par
+    | Tunknown\par
+    | Taxiom -> S.empty\par
+  in\par
+  S.elements (iter typ)\par
+\par
+let name_of_tvar i =\par
+  "T" ^ string_of_int i\par
+\par
+let name_of_tvar' i =\par
+  if 1 <= i && i <= 26 then\par
+    string1 (char_of_int (int_of_char 'A' + i - 1))\par
+  else\par
+    "A" ^ string_of_int i\par
+\par
+let rec pp_type (tvs:N.identifier list) = function\par
+    | Tmeta m -> begin match m.contents with\par
+      | Some t -> pp_type tvs t\par
+      | None -> str "MetaNone"\par
+    end\par
+    | Tvar' i -> str (name_of_tvar' i)\par
+    | Tvar i ->\par
+\tab begin match tryo (List.nth tvs) (i-1) with\par
+\tab | Some v -> pr_id v\par
+(*\tab | None -> str (name_of_tvar2 i)*)\par
+        | None -> str "Any"\par
+\tab end\par
+    | Tglob ((r: L.global_reference), (l: ml_type list)) ->\par
+\tab pp_global C.Type r\par
+\tab   ++ if l = [] then mt ()\par
+\tab      else str "[" ++ prlist_with_comma (pp_type tvs) l ++ str "]"\par
+    | Tarr (t1,t2) ->\par
+\tab str "(" ++ pp_type tvs t1 ++ str " => " ++ pp_type tvs t2 ++ str")"\par
+    | Tdummy _ -> str "Unit"\par
+    | Tunknown -> str "Any"\par
+    | Taxiom -> str "Unit // AXIOM TO BE REALIZED" ++ Pp.fnl()\par
+\par
+let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =\par
+  function\par
+    | MLrel (i, ts) ->\par
+\tab let id = C.get_db_name i env in\par
+        let type_annot = if ts = [] then mt()\par
+            else str "[" ++ prlist_with_comma (pp_type tvs) ts ++ str "]"\par
+        in\par
+\tab pr_id id ++ type_annot\par
+    | MLapp ((f: ml_ast), (args: ml_ast list)) ->\par
+\tab pp_expr tvs env f ++ str "("\par
+\tab   ++ prlist_with_sep (fun () -> str ")(") (pp_expr tvs env) args ++ str ")"\par
+    | MLlam (_, _, _) as a ->\par
+      \tab let fl,a' = MU.collect_lams' a in\par
+        let (ids,tys) = List.split fl in\par
+\tab let ids',env' = C.push_vars (List.map MU.id_of_mlid ids) env in\par
+        let fl' = List.combine ids' tys in\par
+        let pp_arg (id,ty) = str "(" ++ pr_id id ++ str ":"\par
+            ++ pp_type tvs ty ++ str ") =>"\par
+        in\par
+\tab str"\{" ++ Pp.fnl()\par
+          ++ prlist_with_space pp_arg (List.rev fl') ++ Pp.fnl()\par
+          ++ pp_expr tvs env' a' ++ Pp.fnl()\par
+          ++ str "\}"\par
+    | MLletin ((mlid: ml_ident), (i,mlty), (a1: ml_ast), (a2: ml_ast)) ->\par
+\tab let id = MU.id_of_mlid mlid in\par
+\tab let (ids', env2) = C.push_vars [id] env in\par
+\tab str "\{" ++ Pp.fnl()\par
+          ++ local_def' tvs env (List.hd ids') i mlty a1 ++ Pp.fnl()\par
+\tab   ++ pp_expr tvs env2 a2 ++ Pp.fnl() ++ str "\}" ++ Pp.fnl()\par
+    | MLglob (r, ty_args) ->\par
+        let type_annot = if ty_args = [] then mt()\par
+          else str"[" ++ prlist_with_comma (pp_type tvs) ty_args ++ str "]"\par
+        in\par
+        pp_global C.Term r ++ type_annot\par
+    | MLcons ((_: constructor_info), (r: L.global_reference), (args: ml_ast list)) ->\par
+\tab pp_global C.Cons r ++ str "("\par
+\tab   ++ prlist_with_comma (pp_expr tvs env) args ++ str ")"\par
+    | MLcase ((_: match_info), (t: ml_ast), (pv: ml_branch array))  ->\par
+\tab pp_expr tvs env t ++ str " match \{" ++ Pp.fnl()\par
+\tab   ++ prarray_with_sep Pp.fnl (pp_case tvs env) pv\par
+\tab   ++ Pp.fnl() ++ str "\}"\par
+    | MLfix ((i: int), idtys ,(defs: ml_ast array)) ->\par
+        let ids,tys = Array.to_list idtys |> List.split in\par
+\tab let ids',env' = C.push_vars (List.rev ids) env in\par
+\tab let ids'' = List.rev ids' in\par
+\tab let local_defs =\par
+\tab   prlist_with_sep Pp.fnl id\par
+\tab     (list_map3 (fun id ty def -> local_def' tvs env' id 0 ty def)\par
+\tab        ids'' tys (Array.to_list defs))\par
+\tab in\par
+\tab let body = pr_id (List.nth ids'' i) in\par
+\tab str"\{" ++Pp.fnl()++ local_defs ++Pp.fnl()++ body ++ str"\}" ++Pp.fnl()\par
+    | MLexn (s: string) -> str ("throw new Exception(\\"" ^s^ "\\")")\par
+    | MLdummy -> str "()"\par
+    | MLmagic (a, ty) ->\par
+\tab str "(" ++ pp_expr tvs env a ++ str ").asInstanceOf[" ++ pp_type tvs ty ++ str"]"\par
+    | MLaxiom -> str "() // AXIOM TO BE REALIZED" ++ Pp.fnl()\par
+\par
+  (*\par
+    \'e5\~\'b4\'e5\'90\f1\'88\f0\'e5\f1\'88\'86\f0\'e3\'81\lquote\'e3\'81\'ae\'e4\'b8\'80\'e3\'81\'a4\'e3\'81\'aecase\'e3\'81\'ab\'e3\'81\'a4\'e3\'81\f1\'84\f0\'e3\'81\'a6\par
+    name\'e3\'81\'af\'e3\'82\'b3\'e3\f2\u402?\f0\'b3\'e3\'82\'b9\'e3\f2\u402?\f1\'88\f0\'e3\f2\u402?\f0\'a9\'e3\'82\'af\'e3\'82\'bf\'e5\'90\'8d\'e3\'80\'81ids\'e3\'81\'af\'e6\'9d\f2\u376?\f0\'e7\'b8\f1\'9b\f0\'e3\'81\f1\bullet\f0\'e3\'82\f2\u338?\f0\'e3\'82\f1\'8b\f0\'e5\'a4\f1\'89\f0\'e6\f1\bullet\f0\'b0\'e5\'90\'8d\'e3\'81\'ae\'e9\'85\'8d\'e5\f1\'88\emdash\f0\'e3\'80\'81t\'e3\'81\'af\'e5\'bc\'8f\par
+   *)\par
+and pp_case tvs env ((name,ids,t): ml_branch) =\par
+  let (ids, env') = C.push_vars (List.rev_map MU.id_of_mlid ids) env in\par
+  str "case " ++ pp_global C.Cons name ++ str "(" ++\par
+    prlist_with_comma pr_id (List.rev ids)\par
+    ++ str ")" ++ str " => "\par
+    ++ pp_expr tvs env' t\par
+\par
+and local_def tvs env (id: N.identifier) (def: ml_ast) =\par
+  str "def " ++ pr_id id ++ str " = " ++ pp_expr tvs env def\par
+\par
+and local_def' tvs env (id: N.identifier) i (ty: ml_type) (def: ml_ast) =\par
+  let new_tvars =\par
+    let n = List.length tvs in\par
+    if i=0 then []\par
+    else (n+1)--(n+i)\par
+    |> List.map (N.id_of_string $ name_of_tvar)\par
+  in\par
+  let tvs' = List.rev new_tvars @ tvs in\par
+  let pp_tvars = if new_tvars = [] then mt() else\par
+    str "[" ++ prlist_with_comma pr_id new_tvars ++ str "]"\par
+  in\par
+  str "def " ++ pr_id id ++ pp_tvars ++ str ": " ++ pp_type tvs' ty\par
+    ++ str " = " ++ pp_expr tvs' env def\par
+\par
+let pp_def glob body typ =\par
+  let ftvs = free_type_vars typ in\par
+  let tvars = if ftvs = [] then mt() else\par
+    str "[" ++ prlist_with_comma (str $ name_of_tvar') ftvs ++ str "]"\par
+  in\par
+  let tvs = List.map (fun i -> N.id_of_string (name_of_tvar' i)) ftvs in\par
+  let pbody =\par
+    if T.is_custom glob then str (T.find_custom glob)\par
+    else pp_expr [] (C.empty_env()) body\par
+  in\par
+  str "def " ++ pp_global C.Term glob ++ tvars ++ str " : " ++ pp_type tvs typ\par
+    ++ str " = " ++ pbody ++ Pp.fnl()\par
+\par
+let pp_singleton kn packet =\par
+  let l = packet.ip_vars in\par
+  let l' = List.rev l in\par
+  let params = if l = [] then mt ()\par
+      else str "[" ++ prlist_with_comma pr_id l ++ str "]"\par
+  in\par
+  str "type " ++ pp_global C.Type (L.IndRef (kn, 0)) ++ params \par
+    ++ str " = " ++ pp_type l' (List.hd packet.ip_types.(0)) ++ fnl()\par
+\par
+let pp_one_ind (ip: N.inductive) (tvars: N.identifier list)\par
+    (cv: ml_type list array) =\par
+  let tname = pp_global C.Type (L.IndRef ip) in\par
+  let pp_tvars vs =\par
+    if vs = [] then mt()\par
+    else str "[" ++ prlist_with_comma pr_id vs ++ str "]"\par
+  in\par
+  let pp_constructor (r,typs) =\par
+    str "case class " ++ pp_global C.Cons r ++ pp_tvars tvars ++ str "("\par
+      ++ prlist_with_comma\par
+        (fun (i, typ) ->\par
+\tab   let vname = str "x" ++ int i in\par
+\tab   vname ++ str ": " ++ pp_type tvars typ)\par
+        (list_mapi (fun i typ -> (i+1,typ)) typs)\par
+      ++ str ") extends " ++ tname ++ pp_tvars tvars\par
+  in\par
+  str "sealed abstract class " ++ tname ++ pp_tvars tvars ++ fnl()\par
+    ++ prvect_with_sep Pp.fnl pp_constructor\par
+      (Array.mapi (fun j typ -> (L.ConstructRef(ip,j+1), typ)) cv)\par
+    \par
+\par
+let pp_decl : ml_decl -> std_ppcmds = function\par
+  | Dind (kn,i) when i.ind_kind = Singleton ->\par
+      pp_singleton (N.mind_of_kn kn) i.ind_packets.(0) ++ fnl ()\par
+  | Dind ((kn: N.kernel_name), (ind: ml_ind)) ->\par
+      let mind = N.mind_of_kn kn in\par
+      let rec iter i =\par
+\tab if i >= Array.length ind.ind_packets then mt()\par
+\tab else\par
+\tab   let packet = ind.ind_packets.(i) in\par
+\tab   let ip = (mind,i) in\par
+\tab   pp_one_ind ip packet.ip_vars packet.ip_types ++ fnl ()\par
+\tab     ++ iter (i+1)\par
+      in\par
+      iter 0\par
+  | Dtype ((r:L.global_reference), (l: N.identifier list), (t: ml_type)) ->\par
+      if T.is_inline_custom r then mt()\par
+      else\par
+        let name = pp_global C.Type r in\par
+\tab let l = C.rename_tvars keywords l in\par
+        let ty_args, def = match tryo T.find_type_custom r with\par
+          | Some (ids,s) -> List.map str ids, str s\par
+          | None -> List.map pr_id l, pp_type l t\par
+        in\par
+        let tparams = if ty_args = [] then mt()\par
+            else str "[" ++ prlist_with_comma id ty_args ++ str "]"\par
+        in\par
+        str "type " ++ name ++ tparams ++ str " = " ++ def ++ Pp.fnl()\par
+  | Dfix ((rv: L.global_reference array), (defs: ml_ast array), (typs: ml_type array)) ->\par
+      let max = Array.length rv in\par
+      let rec iter i =\par
+\tab if i = max then mt ()\par
+\tab else\par
+\tab   pp_def rv.(i) defs.(i) typs.(i) ++ iter (i+1)\par
+      in\par
+      iter 0\par
+  | Dterm ((r: L.global_reference), (a: ml_ast), (t: ml_type)) ->\par
+      if T.is_inline_custom r then mt ()\par
+      else pp_def r a t\par
+\par
+let rec pp_structure_elem = function\par
+  | (l,SEdecl d) -> pp_decl d\par
+  | (l,SEmodule m) -> pp_module_expr m.ml_mod_expr\par
+  | (l,SEmodtype m) -> mt ()\par
+and pp_module_expr = function\par
+  | MEstruct (mp,sel) -> str "object CoqModule \{" ++ Pp.fnl()\par
+\tab ++ prlist_strict pp_structure_elem sel\par
+\tab ++ str "\}" ++ Pp.fnl()\par
+  | MEfunctor _ -> mt ()\par
+  | MEident _ | MEapply _ -> assert false\par
+\par
+let pp_struct (sts: ml_structure) =\par
+  let pp_sel (mp,sel) =\par
+    C.push_visible mp [];\par
+    let p =\par
+      prlist_strict pp_structure_elem sel\par
+    in\par
+    C.pop_visible (); p\par
+  in\par
+  str "object CoqMain \{" ++ Pp.fnl()\par
+    ++ prlist_strict pp_sel sts\par
+    ++ str "\}" ++ Pp.fnl()\par
+\par
+\par
+let descr = \{\par
+  keywords = keywords;\par
+  file_suffix = ".scala";\par
+  preamble = preamble;\par
+  pp_struct = pp_struct;\par
+  sig_suffix = None;\par
+  sig_preamble = (fun _ _ _ -> mt ());\par
+  pp_sig = (fun _ -> mt ());\par
+  pp_decl = pp_decl;\par
+\}\par
 }
+ 

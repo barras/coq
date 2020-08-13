@@ -153,7 +153,6 @@ type lang = Ocaml | Haskell | Scheme | JSON | Scala
 val lang : unit -> lang
 
 (*s Extraction modes: modular or monolithic, library or minimal ?
-
 Nota:
  - Recursive Extraction : monolithic, minimal
  - Separate Extraction : modular, minimal
@@ -211,6 +210,3 @@ val extraction_implicit : qualid -> int_or_id list -> unit
 val extraction_blacklist : Id.t list -> unit
 val reset_extraction_blacklist : unit -> unit
 val print_extraction_blacklist : unit -> Pp.t
-
-
-

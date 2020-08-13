@@ -273,7 +273,6 @@ and extract_mbody_spec : 'a. _ -> _ -> 'a generic_module_body -> _ =
 
 (* From a [structure_body] (i.e. a list of [structure_field_body])
    to implementations.
-
    NB: when [all=false], the evaluation order of the list is
    important: last to first ensures correct dependencies.
 *)

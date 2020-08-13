@@ -98,8 +98,12 @@ let begins_with_CoqXX s =
   with Not_found -> false
 
 let unquote s =
-  if lang () != Scheme then s
-  else String.map (fun c -> if c == '\'' then '~' else c) s
+        match lang () with
+    | Ocaml | Haskell -> s
+        | Scheme -> String.map (fun c -> if c == '\'' then '~' else c) s
+        | Scala ->
+                let ss = List.map (function | "\'" -> "$prime" | c -> c) (explode s) in
+                String.concat "" ss
 
 let rec qualify delim = function
   | [] -> assert false
@@ -136,7 +140,7 @@ end
 module KMap = Map.Make(KOrd)
 
 let upperkind = function
-  | Type -> lang () == Haskell
+  | Type -> lang () = Haskell || lang () = Scala
   | Term -> false
   | Cons | Mod -> true
 
@@ -261,15 +265,12 @@ let params_ren_add, params_ren_mem =
 
 (*s table indicating the visible horizon at a precise moment,
     i.e. the stack of structures we are inside.
-
   - The sequence of [mp] parts should have the following form:
   a [MPfile] at the beginning, and then more and more [MPdot]
   over this [MPfile], or [MPbound] when inside the type of a
   module parameter.
-
   - the [params] are the [MPbound] when [mp] is a functor,
     the innermost [MPbound] coming first in the list.
-
   - The [content] part is used to record all the names already
   seen at this level.
 *)
@@ -603,7 +604,7 @@ let pp_global k r =
       | JSON -> dottify (List.map unquote rls)
       | Haskell -> if modular () then pp_haskell_gen k mp rls else s
       | Ocaml -> pp_ocaml_gen k mp rls (Some l)
-      | Scala -> unquote s
+      | Scala -> unquote s (* no modular Scheme extraction... *)
 
 (* The next function is used only in Ocaml extraction...*)
 

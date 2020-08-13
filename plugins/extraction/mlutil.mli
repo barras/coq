@@ -21,10 +21,14 @@ val type_subst_list : ml_type list -> ml_type -> ml_type
 val type_subst_vect : ml_type array -> ml_type -> ml_type
 
 val instantiation : ml_schema -> ml_type
+val instantiation' : ml_schema -> ml_type * ml_type list
 
-val needs_magic : ml_type * ml_type -> bool
-val put_magic_if : bool -> ml_ast -> ml_ast
-val put_magic : ml_type * ml_type -> ml_ast -> ml_ast
+type magic
+val needs_magic : ml_type * ml_type -> magic
+val put_magic : magic -> ml_ast -> ml_ast
+val is_magical : magic -> bool
+val put_magic_if : bool -> magic -> ml_ast -> ml_ast
+val put_magic_ifneeds : ml_type * ml_type -> ml_ast -> ml_ast
 
 val generalizable : ml_ast -> bool
 
@@ -34,8 +38,12 @@ module Mlenv : sig
   type t
   val empty : t
 
+  val peek : t -> int -> ml_schema
+
   (* get the n-th more recently entered schema and instantiate it. *)
   val get : t -> int -> ml_type
+
+  val get_with_instantiated_types : t -> int -> ml_type * ml_type list
 
   (* Adding a type in an environment, after generalizing free meta *)
   val push_gen : t -> ml_type -> t
@@ -73,7 +81,7 @@ val isMLdummy : ml_ast -> bool
 val isKill : sign -> bool
 
 val case_expunge : signature -> ml_ast -> ml_ident list * ml_ast
-val term_expunge : signature -> ml_ident list * ml_ast -> ml_ast
+val term_expunge' : signature -> (ml_ident * ml_type) list * ml_ast -> ml_ast
 
 
 (*s Special identifiers. [dummy_name] is to be used for dead code
@@ -89,6 +97,7 @@ val tmp_id : ml_ident -> ml_ident
     the list [idn;...;id1] and the term [t]. *)
 
 val collect_lams : ml_ast -> ml_ident list * ml_ast
+val collect_lams' : ml_ast -> (ml_ident*ml_type) list * ml_ast
 val collect_n_lams : int -> ml_ast -> ml_ident list * ml_ast
 val remove_n_lams : int -> ml_ast -> ml_ast
 val nb_lams : ml_ast -> int
