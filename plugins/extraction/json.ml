@@ -91,7 +91,7 @@ let rec json_type vl = function
 (*s Pretty-printing of expressions. *)
 
 let rec json_expr env = function
-  | MLrel n -> json_dict [
+  | MLrel (n,_) -> json_dict [
       ("what", json_str "expr:rel");
       ("name", json_id (get_db_name n env))
     ]
@@ -108,7 +108,7 @@ let rec json_expr env = function
       ("argnames", json_list (List.map json_id (List.rev fl)));
       ("body", json_expr env' a')
     ]
-  | MLletin (id, a1, a2) ->
+  | MLletin (id,_,a1,a2) ->
     let i, env' = push_vars [id_of_mlid id] env in
     json_dict [
       ("what", json_str "expr:let");
@@ -116,7 +116,7 @@ let rec json_expr env = function
       ("nameval", json_expr env a1);
       ("body", json_expr env' a2)
     ]
-  | MLglob r -> json_dict [
+  | MLglob (r,_) -> json_dict [
       ("what", json_str "expr:global");
       ("name", json_global Term r)
     ]
@@ -134,7 +134,8 @@ let rec json_expr env = function
       ("expr", json_expr env t);
       ("cases", json_listarr (Array.map (fun x -> json_one_pat env x) pv))
     ]
-  | MLfix (i, ids, defs) ->
+  | MLfix (i, idtys, defs) ->
+        let ids = Array.map fst idtys in
     let ids', env' = push_vars (List.rev (Array.to_list ids)) env in
     let ids' = Array.of_list (List.rev ids') in
     json_dict [
@@ -152,7 +153,7 @@ let rec json_expr env = function
       ("msg", json_str s)
     ]
   | MLdummy _ -> json_dict [("what", json_str "expr:dummy")]
-  | MLmagic a -> json_dict [
+  | MLmagic (a,_) -> json_dict [
       ("what", json_str "expr:coerce");
       ("value", json_expr env a)
     ]

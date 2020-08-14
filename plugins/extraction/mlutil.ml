@@ -42,7 +42,7 @@ let rec ( =* ) t1 t2 = match t1, t2 with
     i1 = i2 && ids1 = ids2
       && list_equiv ( =* ) (Array.to_list a1) (Array.to_list a2)
 | MLexn s1, MLexn s2 -> s1 = s2
-| MLdummy, MLdummy -> true
+| MLdummy _, MLdummy _ -> true
 | MLaxiom, MLaxiom -> true
 | MLmagic (t1, _), MLmagic (t2, _) -> t1 =* t2
 | _ -> false
@@ -913,7 +913,7 @@ let rec annot_map f = function
   | MLmagic (a,ty) -> MLmagic (annot_map f a, f ty)
   | MLrel (i, ty) -> MLrel(i, List.map f ty)
   | MLglob (r, tys) -> MLglob(r, List.map f tys)
-  | MLexn _ | MLdummy | MLaxiom as a -> a
+  | MLexn _ | MLdummy _ | MLaxiom as a -> a
 
 let rec annot_subst ty_args a =
   let rec ty_subst = function
