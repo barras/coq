@@ -16,7 +16,7 @@ open Miniml
 open Table
 open Mlutil
 
-let tydummy = Tdummy Kother (*ITODO*)
+let tydummy = Tdummy Kprop (*ITODO*)
 
 (*S Functions upon ML modules. *)
 

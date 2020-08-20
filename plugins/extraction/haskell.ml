@@ -231,7 +231,7 @@ and pp_gen_pat par ids env = function
   | Pusual r -> pp_cons_pat par r (List.map Id.print ids)
   | Ptuple l -> pp_boxed_tuple (pp_gen_pat false ids env) l
   | Pwild -> str "_"
-  | Prel n -> Id.print (get_db_name n env)
+  | Prel (n,_) -> Id.print (get_db_name n env)
 
 and pp_one_pat env (ids,p,t) =
   let ids',env' = push_vars (List.rev_map id_of_mlid ids) env in

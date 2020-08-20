@@ -30,7 +30,7 @@ open Mlutil
 open Context.Rel.Declaration
 (*i*)
 
-let tydummy = Tdummy Kother(*ITODO*)
+let tydummy = Tdummy Kprop(*ITODO*)
 
 exception I of inductive_kind
 
@@ -695,7 +695,7 @@ let rec extract_term env sg mle mlt c args =
          | LocalDef (_,_,ty) -> ty
        in
        let vty = extract_type env sg [] 0 ty [] in
-       let extract_var mlt = put_magic (mlt,vty) (MLglob (GlobRef.VarRef v)) in
+       let extract_var mlt = put_magic (mlt,vty) (MLglob ((GlobRef.VarRef v),vty)) in
        extract_app env sg mle mlt extract_var args
     | Int i -> assert (args = []); MLuint i
     | Float f -> assert (args = []); MLfloat f

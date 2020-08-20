@@ -24,31 +24,6 @@ exception Impossible
 let list_equiv eq xs ys =
   List.length xs = List.length ys && List.for_all2 eq xs ys
 
-let rec ( =* ) t1 t2 = match t1, t2 with
-| MLrel (i,_), MLrel (j,_) -> (i=j)
-| MLapp (f1, a1), MLapp (f2, a2) ->
-    f1 =* f2 && list_equiv ( =* ) a1 a2
-| MLlam (x1, _, t1), MLlam (x2, _, t2) ->
-    x1 = x2 && t1 =* t2
-| MLletin (x1, _, s1, t1), MLletin (x2, _, s2, t2) ->
-    x1 = x2 && s1 =* s2 && t1 =* t2
-| MLglob (r1, _), MLglob (r2, _) -> r1 = r2
-| MLcons (info1, r1, a1), MLcons (info2, r2, a2) ->
-    info1 = info2 && r1 = r2 && list_equiv ( =* ) a1 a2
-| MLcase (info1, t1, brs1), MLcase (info2, t2, brs2) ->
-    info1 = info2 && t1 =* t2
-      && list_equiv br_equiv (Array.to_list brs1) (Array.to_list brs2)
-| MLfix (i1, ids1, a1), MLfix (i2, ids2, a2) ->
-    i1 = i2 && ids1 = ids2
-      && list_equiv ( =* ) (Array.to_list a1) (Array.to_list a2)
-| MLexn s1, MLexn s2 -> s1 = s2
-| MLdummy _, MLdummy _ -> true
-| MLaxiom, MLaxiom -> true
-| MLmagic (t1, _), MLmagic (t2, _) -> t1 =* t2
-| _ -> false
-and br_equiv (r1, ids1, t1) (r2, ids2, t2) =
-  r1 = r2 && ids1 = ids2 && t1 =* t2
-
 (*S Names operations. *)
 
 let anonymous_name = Id.of_string "x"
@@ -165,7 +140,7 @@ let rec mgu = function
 let skip_typing () = lang () == Scheme || is_extrcompute ()
 
 let needs_magic p =
-  if skip_typing () then false
+  if skip_typing () then NoMagic
   else try mgu p; NoMagic with Impossible -> NeedsMagic p
 
 let put_magic magic a =
@@ -427,15 +402,15 @@ let eq_ml_ident i1 i2 = match i1, i2 with
   -> false
 
 let rec eq_ml_ast t1 t2 = match t1, t2 with
-| MLrel i1, MLrel i2 ->
+| MLrel (i1,_), MLrel (i2,_) ->
   Int.equal i1 i2
 | MLapp (f1, t1), MLapp (f2, t2) ->
   eq_ml_ast f1 f2 && List.equal eq_ml_ast t1 t2
 | MLlam (na1,_, t1), MLlam (na2,_, t2) ->
   eq_ml_ident na1 na2 && eq_ml_ast t1 t2
-| MLletin (na1, c1, t1), MLletin (na2, c2, t2) ->
+| MLletin (na1, _, c1, t1), MLletin (na2, _,  c2, t2) ->
   eq_ml_ident na1 na2 && eq_ml_ast c1 c2 && eq_ml_ast t1 t2
-| MLglob gr1, MLglob gr2 -> GlobRef.equal gr1 gr2
+| MLglob (gr1,_), MLglob (gr2,_) -> GlobRef.equal gr1 gr2
 | MLcons (t1, gr1, c1), MLcons (t2, gr2, c2) ->
   eq_ml_type t1 t2 && GlobRef.equal gr1 gr2 && List.equal eq_ml_ast c1 c2
 | MLtuple t1, MLtuple t2 ->
@@ -443,11 +418,11 @@ let rec eq_ml_ast t1 t2 = match t1, t2 with
 | MLcase (t1, c1, p1), MLcase (t2, c2, p2) ->
   eq_ml_type t1 t2 && eq_ml_ast c1 c2 && Array.equal eq_ml_branch p1 p2
 | MLfix (i1, id1, t1), MLfix (i2, id2, t2) ->
-  Int.equal i1 i2 && Array.equal Id.equal id1 id2 && Array.equal eq_ml_ast t1 t2
+  Int.equal i1 i2 && Array.equal (fun (x,_) (y,_) -> Id.equal x y) id1 id2 && Array.equal eq_ml_ast t1 t2
 | MLexn e1, MLexn e2 -> String.equal e1 e2
 | MLdummy k1, MLdummy k2 -> k1 == k2
 | MLaxiom, MLaxiom -> true
-| MLmagic t1, MLmagic t2 -> eq_ml_ast t1 t2
+| MLmagic (t1,_), MLmagic (t2,_) -> eq_ml_ast t1 t2
 | MLuint i1, MLuint i2 -> Uint63.equal i1 i2
 | MLfloat f1, MLfloat f2 -> Float64.equal f1 f2
 | _, _ -> false
@@ -457,7 +432,7 @@ and eq_ml_pattern p1 p2 = match p1, p2 with
   GlobRef.equal gr1 gr2 && List.equal eq_ml_pattern p1 p2
 | Ptuple p1, Ptuple p2 ->
   List.equal eq_ml_pattern p1 p2
-| Prel i1, Prel i2 ->
+| Prel (i1,_), Prel (i2,_) ->
   Int.equal i1 i2
 | Pwild, Pwild -> true
 | Pusual gr1, Pusual gr2 -> GlobRef.equal gr1 gr2
@@ -473,7 +448,7 @@ and eq_ml_branch (id1, p1, t1) (id2, p2, t2) =
 
 let ast_iter_rel f =
   let rec iter n = function
-        | MLrel (i,_) -> f (i-n)
+        | MLrel (i,ty) -> f ((i-n),ty)
         | MLlam (_,_,a) -> iter (n+1) a
         | MLletin (_,_,a,b) -> iter n a; iter (n+1) b
     | MLcase (_,a,v) ->
@@ -501,7 +476,7 @@ let ast_map f = function
   | MLapp (a,l) -> MLapp (f a, List.map f l)
   | MLcons (typ,c,l) -> MLcons (typ,c, List.map f l)
   | MLtuple l -> MLtuple (List.map f l)
-  | MLmagic a -> MLmagic (f a)
+  | MLmagic (a,x) -> MLmagic (f a,x)
   | MLparray (t,def) -> MLparray (Array.map f t, f def)
   | MLrel _ | MLglob _ | MLexn _ | MLdummy _ | MLaxiom
   | MLuint _ | MLfloat _ as a -> a
@@ -548,15 +523,21 @@ let ast_iter f = function
 
 let ast_occurs k t =
   try
-    ast_iter_rel (fun i -> if Int.equal i k then raise Found) t; false
+    ast_iter_rel (fun (i,_) -> if Int.equal i k then raise Found) t; false
   with Found -> true
+
+let ast_occurs' k t =
+  let oty = ref None in
+  try
+    ast_iter_rel (fun (i,ty) -> if Int.equal i k then (oty := Some(ty); raise Found)) t; None
+  with Found -> !oty
 
 (*s [occurs_itvl k k' t] returns [true] if there is a [(Rel i)]
    in [t] with [k<=i<=k'] *)
 
 let ast_occurs_itvl k k' t =
   try
-    ast_iter_rel (fun i -> if (k <= i) && (i <= k') then raise Found) t; false
+    ast_iter_rel (fun (i,_) -> if (k <= i) && (i <= k') then raise Found) t; false
   with Found -> true
 
 (* Number of occurrences of [Rel 1] in [t], with special treatment of match:
@@ -584,24 +565,24 @@ let nb_occur_match =
 
 let dump_unused_vars a =
   let rec ren env a = match a with
-    | MLrel i ->
+    | MLrel (i,_) ->
        let () = (List.nth env (i-1)) := true in a
 
-    | MLlam (id,_,b) ->
+    | MLlam (id,x,b) ->
        let occ_id = ref false in
        let b' = ren (occ_id::env) b in
-       if !occ_id then if b' == b then a else MLlam(id,b')
-       else MLlam(Dummy,tydummy,b')
+       if !occ_id then if b' == b then a else MLlam(id,x,b')
+       else MLlam(Dummy,x,b')
 
-    | MLletin (id,b,c) ->
+    | MLletin (id,x,b,c) ->
        let occ_id = ref false in
        let b' = ren env b in
        let c' = ren (occ_id::env) c in
        if !occ_id then
-         if b' == b && c' == c then a else MLletin(id,b',c')
+         if b' == b && c' == c then a else MLletin(id,x,b',c')
        else
          (* 'let' without occurrence: shouldn't happen after simpl *)
-         MLletin(Dummy,b',c')
+         MLletin(Dummy,x,b',c')
 
     | MLcase (t,e,br) ->
        let e' = ren env e in
@@ -625,9 +606,9 @@ let dump_unused_vars a =
        let l' = List.Smart.map (ren env) l in
        if l' == l then a else MLtuple l'
 
-    | MLmagic b ->
+    | MLmagic (b,x) ->
        let b' = ren env b in
-       if b' == b then a else MLmagic b'
+       if b' == b then a else MLmagic (b',x)
 
     | MLparray(t,def) ->
        let t' = Array.Smart.map (ren env) t in
@@ -725,7 +706,7 @@ let is_regular_match br =
         match pat with
           | Pusual r -> r
           | Pcons (r,l) ->
-            let is_rel i = function Prel j -> Int.equal i j | _ -> false in
+            let is_rel i = function Prel (j,_) -> Int.equal i j | _ -> false in
             if not (List.for_all_i is_rel 1 (List.rev l))
             then raise Impossible;
             r
@@ -793,7 +774,7 @@ let rec nb_lams = function
 
 (*s [named_lams] does the converse of [collect_lams]. *)
 
-let tydummy = Tdummy Kother (*ITODO*)
+let tydummy = Tdummy Kprop (*ITODO*)
 let rec named_lams ids a = match ids with
   | [] -> a
   | id :: ids -> named_lams ids (MLlam (id, new_meta(), a))
@@ -872,7 +853,7 @@ let atomic_eta_red e =
   match t with
   | MLapp (f,a) when test_eta_args_lift 0 n a ->
      (match f with
-      | MLrel k when k>n -> Some (MLrel (k-n))
+      | MLrel (k,x) when k>n -> Some (MLrel ((k-n),x))
       | MLglob _ | MLdummy _ -> Some f
       | _ -> None)
   | _ -> None
@@ -962,7 +943,7 @@ let branch_as_fun typ (l,p,c) =
   let cons = match p with
     | Pusual r -> MLcons (typ, r, eta_args nargs)
     | Pcons (r,pl) ->
-      let pat2rel = function Prel i -> MLrel i | _ -> raise Impossible in
+      let pat2rel = function Prel (i,x) -> MLrel (i,x) | _ -> raise Impossible in
       MLcons (typ, r, List.map pat2rel pl)
     | _ -> raise Impossible
   in
@@ -1107,7 +1088,7 @@ let rec iota_red i lift br ((typ,r,a) as cons) =
       let c = named_lams (List.rev ids) c in
       let c = ast_lift lift c
       in MLapp (c,a)
-    | Prel 1 when Int.equal (List.length ids) 1 ->
+    | Prel (1,_) when Int.equal (List.length ids) 1 ->
       let c = MLlam (List.hd ids,tydummy,c) in
       let c = ast_lift lift c
       in MLapp(c,[MLcons(typ,r,a)])
@@ -1150,11 +1131,11 @@ let expand_linear_let o id e =
 
 (* Some beta-iota reductions + simplifications. *)
 
-let rec unmagic = function MLmagic e -> unmagic e | e -> e
+let rec unmagic = function MLmagic (e,_) -> unmagic e | e -> e
 let is_magic = function MLmagic _ -> true | _ -> false
-let magic_hd a = match a with
-  | MLmagic _ :: _ -> a
-  | e :: a -> MLmagic e :: a
+let magic_hd a t = match a with
+  | MLmagic (_ :: _,_) -> a
+  | e :: a -> MLmagic (e :: a,t)
   | [] -> assert false
 
 let rec simpl o = function
@@ -1183,14 +1164,14 @@ let rec simpl o = function
       if ast_occurs_itvl 1 n c.(i) then
         MLfix (i, ids, Array.map (simpl o) c)
       else simpl o (ast_lift (-n) c.(i)) (* Dummy fixpoint *)
-  | MLmagic(MLmagic _ as e) -> simpl o e
-  | MLmagic(MLapp (f,l)) -> simpl o (MLapp (MLmagic f, l))
-  | MLmagic(MLletin(id,c,e)) -> simpl o (MLletin(id,c,MLmagic e))
-  | MLmagic(MLcase(typ,e,br)) ->
-     let br' = Array.map (fun (ids,p,c) -> (ids,p,MLmagic c)) br in
+  | MLmagic((MLmagic _ as e),_) -> simpl o e
+  | MLmagic((MLapp (f,l)),x) -> simpl o (MLapp (MLmagic (f,x), l))
+  | MLmagic((MLletin(id,x1,c,e)),x2) -> simpl o (MLletin(id,x1,c,MLmagic (e,x2)))
+  | MLmagic((MLcase(typ,e,br)),x) ->
+     let br' = Array.map (fun (ids,p,c) -> (ids,p,MLmagic (c,x))) br in
      simpl o (MLcase(typ,e,br'))
-  | MLmagic(MLdummy _ as e) when lang () == Haskell -> e
-  | MLmagic(MLexn _ as e) -> e
+  | MLmagic((MLdummy _ as e),_) when lang () == Haskell -> e
+  | MLmagic((MLexn _ as e),_) -> e
   | MLlam _ as e ->
      (match atomic_eta_red e with
       | Some e' -> e'
@@ -1210,11 +1191,11 @@ and simpl_app o a = function
          | _ ->
              let a' = List.map (ast_lift 1) (List.tl a) in
              simpl o (MLletin (id, (0,ty), List.hd a, MLapp (t, a'))))
-  | MLmagic (MLlam (id,_,t)) ->
+  | MLmagic (MLlam (id,_,t),x) ->
       (* When we've at least one argument, we permute the magic
          and the lambda, to simplify things a bit (see #2795).
          Alas, the 1st argument must also be magic then. *)
-      simpl_app o (magic_hd a) (MLlam (id,tydummy,MLmagic t))
+      simpl_app o (magic_hd a x) (MLlam (id,tydummy,MLmagic (t,x)))
   | MLletin (id,ty,e1,e2) when o.opt_let_app ->
       (* Application of a letin: we push arguments inside *)
       MLletin (id, ty, e1, simpl o (MLapp (e2, List.map (ast_lift 1) a)))
@@ -1254,8 +1235,9 @@ and simpl_case o typ br e =
           simpl o (MLletin (Tmp anonymous_name, (0,tydummy)(*ITODO*), e, f))
         | Some (f,ints) ->
           let last_br =
-            if ast_occurs 1 f then ([Tmp anonymous_name], Prel 1, f)
-            else ([], Pwild, ast_pop f)
+                  match (ast_occurs' 1 f) with
+                        | Some(ty) -> ([Tmp anonymous_name], Prel (1,ty), f)
+                        | None -> ([], Pwild, ast_pop f)
           in
           let brl = Array.to_list br in
           let brl_opt = List.filteri (fun i _ -> not (Int.Set.mem i ints)) brl in
@@ -1393,8 +1375,8 @@ let kill_dummy_args (ids,bl) r t =
   let m = List.length ids in
   let sign = List.rev bl in
   let rec found n = function
-    | MLrel r' when Int.equal r' (r + n) -> true
-    | MLmagic e -> found n e
+    | MLrel (r',_) when Int.equal r' (r + n) -> true
+    | MLmagic (e,_) -> found n e
     | _ -> false
   in
   let rec killrec n = function

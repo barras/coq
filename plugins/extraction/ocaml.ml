@@ -338,7 +338,7 @@ and pp_record_proj par env typ t pv args =
     match body with MLmagic _ | MLapp(MLmagic _, _) -> true | _ -> false
   in
   let rec lookup_rel i idx = function
-    | Prel j :: l -> if Int.equal i j then idx else lookup_rel i (idx+1) l
+    | Prel (j :: l,_) -> if Int.equal i j then idx else lookup_rel i (idx+1) l
     | Pwild :: l -> lookup_rel i (idx+1) l
     | _ -> raise Impossible
   in
@@ -380,7 +380,7 @@ and pp_gen_pat ids env = function
   | Pusual r -> pp_cons_pat r (List.map Id.print ids)
   | Ptuple l -> pp_boxed_tuple (pp_gen_pat ids env) l
   | Pwild -> str "_"
-  | Prel n -> Id.print (get_db_name n env)
+  | Prel (n,_) -> Id.print (get_db_name n env)
 
 and pp_ifthenelse env expr pv = match pv with
   | [|([],tru,the);([],fal,els)|] when

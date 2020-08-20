@@ -151,7 +151,7 @@ let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =
  in
  let body = pr_id (List.nth ids'' i) in
  str"\{" ++Pp.fnl()++ local_defs ++Pp.fnl()++ body ++ str"\}" ++Pp.fnl()
-    | MLexn (s: string) -> str ("throw new Exception()")
+    | MLexn (s: string) -> str ("throw new Exception(\"" ^s^ "\")")
     | MLdummy -> str "()"
     | MLmagic (a, ty) ->
  str "(" ++ pp_expr tvs env a ++ str ").asInstanceOf[" ++ pp_type tvs ty ++ str"]"
