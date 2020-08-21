@@ -27,7 +27,7 @@ let (--) a b =
   if a <= b then iter [] a b
   else List.rev (iter [] b a)
 
-(* see Scala language specification: {{\field{\*\fldinst{HYPERLINK http://www.scala-lang.org/sites/default/files/linuxsoft_archives/docu/files/ScalaReference.pdf }}{\fldrslt{http://www.scala-lang.org/sites/default/files/linuxsoft_archives/docu/files/ScalaReference.pdf\ul0\cf0}}}}\f0\fs22  *)
+(* see Scala language specification: {{field{*fldinst{HYPERLINK http://www.scala-lang.org/sites/default/files/linuxsoft_archives/docu/files/ScalaReference.pdf }}{\fldrslt{http://www.scala-lang.org/sites/default/files/linuxsoft_archives/docu/files/ScalaReference.pdf\ul0\cf0}}}}\f0\fs22  *)
 let keywords =
   List.fold_right (fun s -> N.Idset.add (N.id_of_string s))
   [ "abstract"; "do"; "finally"; "import"; "object"; "return"; "trait"; "var";
@@ -118,16 +118,16 @@ let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =
         let pp_arg (id,ty) = str "(" ++ pr_id id ++ str ":"
             ++ pp_type tvs ty ++ str ") =>"
         in
- str"\{" ++ Pp.fnl()
+ str"{" ++ Pp.fnl()
           ++ prlist_with_space pp_arg (List.rev fl') ++ Pp.fnl()
           ++ pp_expr tvs env' a' ++ Pp.fnl()
-          ++ str "\}"
+          ++ str "}"
     | MLletin ((mlid: ml_ident), (i,mlty), (a1: ml_ast), (a2: ml_ast)) ->
  let id = MU.id_of_mlid mlid in
  let (ids', env2) = C.push_vars [id] env in
- str "\{" ++ Pp.fnl()
+ str "{" ++ Pp.fnl()
           ++ local_def' tvs env (List.hd ids') i mlty a1 ++ Pp.fnl()
-   ++ pp_expr tvs env2 a2 ++ Pp.fnl() ++ str "\}" ++ Pp.fnl()
+   ++ pp_expr tvs env2 a2 ++ Pp.fnl() ++ str "}" ++ Pp.fnl()
     | MLglob (r, ty_args) ->
         let type_annot = if ty_args = [] then mt()
           else str"[" ++ prlist_with_comma (pp_type tvs) ty_args ++ str "]"
@@ -137,9 +137,9 @@ let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =
  pp_global C.Cons r ++ str "("
    ++ prlist_with_comma (pp_expr tvs env) args ++ str ")"
     | MLcase ((_: match_info), (t: ml_ast), (pv: ml_branch array))  ->
- pp_expr tvs env t ++ str " match \{" ++ Pp.fnl()
+ pp_expr tvs env t ++ str " match {" ++ Pp.fnl()
    ++ prarray_with_sep Pp.fnl (pp_case tvs env) pv
-   ++ Pp.fnl() ++ str "\}"
+   ++ Pp.fnl() ++ str "}"
     | MLfix ((i: int), idtys ,(defs: ml_ast array)) ->
         let ids,tys = Array.to_list idtys |> List.split in
  let ids',env' = C.push_vars (List.rev ids) env in
@@ -150,7 +150,7 @@ let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =
         ids'' tys (Array.to_list defs))
  in
  let body = pr_id (List.nth ids'' i) in
- str"\{" ++Pp.fnl()++ local_defs ++Pp.fnl()++ body ++ str"\}" ++Pp.fnl()
+ str"{" ++Pp.fnl()++ local_defs ++Pp.fnl()++ body ++ str"}" ++Pp.fnl()
     | MLexn (s: string) -> str ("throw new Exception(\"" ^s^ "\")")
     | MLdummy -> str "()"
     | MLmagic (a, ty) ->
@@ -272,9 +272,9 @@ let rec pp_structure_elem = function
   | (l,SEmodule m) -> pp_module_expr m.ml_mod_expr
   | (l,SEmodtype m) -> mt ()
 and pp_module_expr = function
-  | MEstruct (mp,sel) -> str "object CoqModule \{" ++ Pp.fnl()
+  | MEstruct (mp,sel) -> str "object CoqModule {" ++ Pp.fnl()
  ++ prlist_strict pp_structure_elem sel
- ++ str "\}" ++ Pp.fnl()
+ ++ str "}" ++ Pp.fnl()
   | MEfunctor _ -> mt ()
   | MEident _ | MEapply _ -> assert false
 
@@ -286,9 +286,9 @@ let pp_struct (sts: ml_structure) =
     in
     C.pop_visible (); p
   in
-  str "object CoqMain \{" ++ Pp.fnl()
+  str "object CoqMain {" ++ Pp.fnl()
     ++ prlist_strict pp_sel sts
-    ++ str "\}" ++ Pp.fnl()
+    ++ str "}" ++ Pp.fnl()
 
 
 let descr = {
