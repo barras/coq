@@ -418,4 +418,3 @@ let optimize_struct to_appear struc =
   in
   let () = check_for_remaining_implicits mini_struc in
   mini_struc
-  mini_struc

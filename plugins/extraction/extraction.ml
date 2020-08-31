@@ -691,11 +691,15 @@ let rec extract_term env sg mle mlt c args =
        (* Only during Show Extraction *)
        let open Context.Named.Declaration in
        let ty = match EConstr.lookup_named v env with
-         | LocalAssum (_,ty) -> ty
-         | LocalDef (_,_,ty) -> ty
+        (* TODO Distinguish the below cases:
+        - Variables cannot be polymorphic because non-prenex polymorphism is not supported in ML languages
+        - Lets can be polymorphic in ML languages and we should therefore distinguish this case in the below code
+        *)
+         | LocalAssum (_,ty) -> ty (* Variable *)
+         | LocalDef (_,_,ty) -> ty (* Let *)
        in
        let vty = extract_type env sg [] 0 ty [] in
-       let extract_var mlt = put_magic (mlt,vty) (MLglob ((GlobRef.VarRef v),vty)) in
+       let extract_var mlt = put_magic_ifneeds (mlt,vty) (MLglob ((GlobRef.VarRef v),[])) in
        extract_app env sg mle mlt extract_var args
     | Int i -> assert (args = []); MLuint i
     | Float f -> assert (args = []); MLfloat f
@@ -713,7 +717,7 @@ and extract_maybe_term env sg mle mlt c =
   try check_default env sg (type_of env sg c);
     extract_term env sg mle mlt c []
   with NotDefault d ->
-    put_magic_ifneeds (mlt, Tdummy d) MLdummy
+    put_magic_ifneeds (mlt, Tdummy d) (MLdummy d)
 
 (*s Generic way to deal with an application. *)
 
@@ -923,7 +927,7 @@ and extract_fix env sg mle i (fi,ti,ci as recd) mlt =
   metas.(i) <- mlt;
   let mle = Array.fold_left Mlenv.push_type mle metas in
   let ei = Array.map2 (extract_maybe_term env sg mle) metas ci in
-  let idtys = array_map2 (fun f meta -> ((fun x -> id_of_name x.binder_name) f, meta)) fi metas in
+  let idtys = Array.map2 (fun f meta -> ((fun x -> id_of_name x.binder_name) f, meta)) fi metas in
   MLfix (i, idtys, ei)
 
 (*S ML declarations. *)

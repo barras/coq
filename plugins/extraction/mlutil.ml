@@ -21,9 +21,6 @@ open Miniml
 exception Found
 exception Impossible
 
-let list_equiv eq xs ys =
-  List.length xs = List.length ys && List.for_all2 eq xs ys
-
 (*S Names operations. *)
 
 let anonymous_name = Id.of_string "x"
@@ -432,7 +429,7 @@ and eq_ml_pattern p1 p2 = match p1, p2 with
   GlobRef.equal gr1 gr2 && List.equal eq_ml_pattern p1 p2
 | Ptuple p1, Ptuple p2 ->
   List.equal eq_ml_pattern p1 p2
-| Prel (i1,_), Prel (i2,_) ->
+| Prel i1, Prel i2 ->
   Int.equal i1 i2
 | Pwild, Pwild -> true
 | Pusual gr1, Pusual gr2 -> GlobRef.equal gr1 gr2
@@ -525,12 +522,6 @@ let ast_occurs k t =
   try
     ast_iter_rel (fun (i,_) -> if Int.equal i k then raise Found) t; false
   with Found -> true
-
-let ast_occurs' k t =
-  let oty = ref None in
-  try
-    ast_iter_rel (fun (i,ty) -> if Int.equal i k then (oty := Some(ty); raise Found)) t; None
-  with Found -> !oty
 
 (*s [occurs_itvl k k' t] returns [true] if there is a [(Rel i)]
    in [t] with [k<=i<=k'] *)
@@ -706,7 +697,7 @@ let is_regular_match br =
         match pat with
           | Pusual r -> r
           | Pcons (r,l) ->
-            let is_rel i = function Prel (j,_) -> Int.equal i j | _ -> false in
+            let is_rel i = function Prel j -> Int.equal i j | _ -> false in
             if not (List.for_all_i is_rel 1 (List.rev l))
             then raise Impossible;
             r
@@ -887,7 +878,7 @@ let rec annot_map f = function
   | MLletin (i,(n,ty), a,b) ->
       MLletin (i, (n,f ty), annot_map f a, annot_map f b)
   | MLcase (i,a,v) ->
-      MLcase (i,annot_map f a, Array.map (ast_map_case (annot_map f)) v)
+      MLcase (i,annot_map f a, Array.map (ast_map_branch (annot_map f)) v)
   | MLfix (i,ids,v) -> MLfix (i, ids, Array.map (annot_map f) v)
   | MLapp (a,l) -> MLapp (annot_map f a, List.map (annot_map f) l)
   | MLcons (i,c,l) -> MLcons (i,c, List.map (annot_map f) l)
@@ -896,7 +887,7 @@ let rec annot_map f = function
   | MLglob (r, tys) -> MLglob(r, List.map f tys)
   | MLexn _ | MLdummy _ | MLaxiom as a -> a
 
-let rec annot_subst ty_args a =
+let annot_subst ty_args a =
   let rec ty_subst = function
   | Tvar' i when i <= List.length ty_args ->
       List.nth ty_args (i-1)
@@ -943,7 +934,7 @@ let branch_as_fun typ (l,p,c) =
   let cons = match p with
     | Pusual r -> MLcons (typ, r, eta_args nargs)
     | Pcons (r,pl) ->
-      let pat2rel = function Prel (i,x) -> MLrel (i,x) | _ -> raise Impossible in
+      let pat2rel = function Prel i -> MLrel (i,[]) | _ -> raise Impossible in
       MLcons (typ, r, List.map pat2rel pl)
     | _ -> raise Impossible
   in
@@ -1036,7 +1027,7 @@ let factor_branches o typ br =
 
 (*s If all branches are functions, try to permute the case and the functions. *)
 
-let rec merge_ids ids ids' = match ids,ids' with
+let rec merge_idtys idtys idtys' = match idtys,idtys' with
   | [],l -> l
   | l,[] -> l
   | (i,ty)::idtys, (i',ty')::idtys' ->
@@ -1088,7 +1079,7 @@ let rec iota_red i lift br ((typ,r,a) as cons) =
       let c = named_lams (List.rev ids) c in
       let c = ast_lift lift c
       in MLapp (c,a)
-    | Prel (1,_) when Int.equal (List.length ids) 1 ->
+    | Prel 1 when Int.equal (List.length ids) 1 ->
       let c = MLlam (List.hd ids,tydummy,c) in
       let c = ast_lift lift c
       in MLapp(c,[MLcons(typ,r,a)])
@@ -1134,8 +1125,8 @@ let expand_linear_let o id e =
 let rec unmagic = function MLmagic (e,_) -> unmagic e | e -> e
 let is_magic = function MLmagic _ -> true | _ -> false
 let magic_hd a t = match a with
-  | MLmagic (_ :: _,_) -> a
-  | e :: a -> MLmagic (e :: a,t)
+  | MLmagic (_, _) :: _ -> a
+  | e :: a -> MLmagic (e,t) :: a
   | [] -> assert false
 
 let rec simpl o = function
@@ -1235,9 +1226,9 @@ and simpl_case o typ br e =
           simpl o (MLletin (Tmp anonymous_name, (0,tydummy)(*ITODO*), e, f))
         | Some (f,ints) ->
           let last_br =
-                  match (ast_occurs' 1 f) with
-                        | Some(ty) -> ([Tmp anonymous_name], Prel (1,ty), f)
-                        | None -> ([], Pwild, ast_pop f)
+                  if (ast_occurs 1 f) then
+                  ([Tmp anonymous_name], Prel 1, f)
+                  else ([], Pwild, ast_pop f)
           in
           let brl = Array.to_list br in
           let brl_opt = List.filteri (fun i _ -> not (Int.Set.mem i ints)) brl in
@@ -1324,7 +1315,7 @@ let kill_dummy_lams sign c =
   let skip = max 0 ((fst_kill 0 bl) - 1) in
   let ids_skip, ids = List.chop skip ids in
   let _, bl = List.chop skip bl in
-  let c = named_lams ids_skip c in
+  let c = named_lams' ids_skip c in
   let ids',c = kill_some_lams' bl (ids,c) in
   (ids,bl), named_lams' ids' c, ids'
 
@@ -1427,8 +1418,9 @@ let rec kill_dummy = function
       (try
          let k,c,ids' = kill_dummy_fix i c [] in
          let e = kill_dummy (kill_dummy_args k 1 e) in
-                 let ty' = kill_annot (List.rev ids) (List.rev ids') ty in
-                 fi.(i) <- (fst fi.(i), ty');
+         let ids, _ = k in
+         let ty' = kill_annot (List.rev ids) (List.rev ids') ty in
+         fi.(i) <- (fst fi.(i), ty');
          MLletin(id,(n,ty'), MLfix(i,fi,c),e)
       with Impossible ->
         MLletin(id, (n,ty), MLfix(i,fi,Array.map kill_dummy c),kill_dummy e))
@@ -1436,6 +1428,7 @@ let rec kill_dummy = function
       (try
          let k,c,ids' = kill_dummy_lams [] (kill_dummy_hd c) in
          let e = kill_dummy (kill_dummy_args k 1 e) in
+         let ids, _ = k in
          let c = kill_dummy c in
                  let ty' = kill_annot (List.rev ids) (List.rev ids') ty in
                  if is_atomic c then ast_subst c e else MLletin (id, (i,ty'), c, e)

@@ -1,8 +1,9 @@
 open Pp             (* lib/pp.ml4 *)
 open Util           (* lib/util.ml *)
-module N = Names    (* kernel/names.ml *)
 module No = Nameops (* library/nameops.ml *)
 module L = Libnames (* library/libnames.ml *)
+open Names (* kernel/names.ml *)
+
 
 module T = Table
 open Miniml
@@ -29,15 +30,15 @@ let (--) a b =
 
 (* see Scala language specification: {{field{*fldinst{HYPERLINK http://www.scala-lang.org/sites/default/files/linuxsoft_archives/docu/files/ScalaReference.pdf }}{\fldrslt{http://www.scala-lang.org/sites/default/files/linuxsoft_archives/docu/files/ScalaReference.pdf\ul0\cf0}}}}\f0\fs22  *)
 let keywords =
-  List.fold_right (fun s -> N.Idset.add (N.id_of_string s))
+  List.fold_right (fun s -> Id.Set.add (Id.of_string s))
   [ "abstract"; "do"; "finally"; "import"; "object"; "return"; "trait"; "var";
     "_"; "case"; "else"; "for"; "lazy"; "override"; "sealed"; "try"; "while";
     "catch"; "extends"; "forSome"; "match"; "package"; "super"; "true"; "with";
     "class"; "false"; "if"; "new"; "private"; "this"; "type"; "yield"; "def";
     "final"; "implicit"; "null"; "protected"; "throw"; "val"; ]
-  N.Idset.empty
+  Id.Set.empty
 
-let preamble mod_name used_modules usf = str ""
+let preamble mod_name used_modules usf _ = str ""
 
 let prarray_with_sep pp f xs = prlist_with_sep pp f (Array.to_list xs)
 let prlist_with_comma f xs = prlist_with_sep (fun () -> str ", ") f xs
@@ -48,16 +49,15 @@ let pp_global k r =
   else str (Common.pp_global k r)
 
 let pr_id id =
-  let s = N.string_of_id id in
-  let ss = List.map (function | "\\'" -> "$prime" | c -> c) (explode s) in
-  str (String.concat "" ss)
+  let s = Id.to_string id in
+  str Str.(global_replace (regexp "'") "$prime" s)
 
 let free_type_vars typ =
   let module S = Set.Make(struct type t = int let compare = compare end) in
   let rec iter = function
     | Tmeta _ | Tvar' _ -> S.empty
     | Tvar (i:int) ->  S.singleton i
-    | Tglob ((r: L.global_reference), (l: ml_type list)) ->
+    | Tglob (r, l) ->
  List.fold_left (fun store typ ->
    S.union store (iter typ)) S.empty l
     | Tarr (t1,t2) ->
@@ -77,7 +77,7 @@ let name_of_tvar' i =
   else
     "A" ^ string_of_int i
 
-let rec pp_type (tvs:N.identifier list) = function
+let rec pp_type (tvs:Id.t list) = function
     | Tmeta m -> begin match m.contents with
       | Some t -> pp_type tvs t
       | None -> str "MetaNone"
@@ -89,7 +89,7 @@ let rec pp_type (tvs:N.identifier list) = function
 (* | None -> str (name_of_tvar2 i)*)
         | None -> str "Any"
  end
-    | Tglob ((r: L.global_reference), (l: ml_type list)) ->
+    | Tglob (r, l) ->
  pp_global C.Type r
    ++ if l = [] then mt ()
       else str "[" ++ prlist_with_comma (pp_type tvs) l ++ str "]"
@@ -99,7 +99,7 @@ let rec pp_type (tvs:N.identifier list) = function
     | Tunknown -> str "Any"
     | Taxiom -> str "Unit // AXIOM TO BE REALIZED" ++ Pp.fnl()
 
-let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =
+let rec pp_expr (tvs: Id.t list) (env: C.env) : ml_ast -> 'a =
   function
     | MLrel (i, ts) ->
  let id = C.get_db_name i env in
@@ -133,10 +133,10 @@ let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =
           else str"[" ++ prlist_with_comma (pp_type tvs) ty_args ++ str "]"
         in
         pp_global C.Term r ++ type_annot
-    | MLcons ((_: constructor_info), (r: L.global_reference), (args: ml_ast list)) ->
+    | MLcons (_, r, args) ->
  pp_global C.Cons r ++ str "("
    ++ prlist_with_comma (pp_expr tvs env) args ++ str ")"
-    | MLcase ((_: match_info), (t: ml_ast), (pv: ml_branch array))  ->
+    | MLcase (_, t, pv)  ->
  pp_expr tvs env t ++ str " match {" ++ Pp.fnl()
    ++ prarray_with_sep Pp.fnl (pp_case tvs env) pv
    ++ Pp.fnl() ++ str "}"
@@ -146,13 +146,13 @@ let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =
  let ids'' = List.rev ids' in
  let local_defs =
    prlist_with_sep Pp.fnl id
-     (list_map3 (fun id ty def -> local_def' tvs env' id 0 ty def)
+     (List.map3 (fun id ty def -> local_def' tvs env' id 0 ty def)
         ids'' tys (Array.to_list defs))
  in
  let body = pr_id (List.nth ids'' i) in
  str"{" ++Pp.fnl()++ local_defs ++Pp.fnl()++ body ++ str"}" ++Pp.fnl()
     | MLexn (s: string) -> str ("throw new Exception(\"" ^s^ "\")")
-    | MLdummy -> str "()"
+    | MLdummy _ -> str "()"
     | MLmagic (a, ty) ->
  str "(" ++ pp_expr tvs env a ++ str ").asInstanceOf[" ++ pp_type tvs ty ++ str"]"
     | MLaxiom -> str "() // AXIOM TO BE REALIZED" ++ Pp.fnl()
@@ -161,22 +161,22 @@ let rec pp_expr (tvs: N.identifier list) (env: C.env) : ml_ast -> 'a =
     \'e5\~\'b4\'e5\'90\f1\'88\f0\'e5\f1\'88\'86\f0\'e3\'81\lquote\'e3\'81\'ae\'e4\'b8\'80\'e3\'81\'a4\'e3\'81\'aecase\'e3\'81\'ab\'e3\'81\'a4\'e3\'81\f1\'84\f0\'e3\'81\'a6
     name\'e3\'81\'af\'e3\'82\'b3\'e3\f2\u402?\f0\'b3\'e3\'82\'b9\'e3\f2\u402?\f1\'88\f0\'e3\f2\u402?\f0\'a9\'e3\'82\'af\'e3\'82\'bf\'e5\'90\'8d\'e3\'80\'81ids\'e3\'81\'af\'e6\'9d\f2\u376?\f0\'e7\'b8\f1\'9b\f0\'e3\'81\f1\bullet\f0\'e3\'82\f2\u338?\f0\'e3\'82\f1\'8b\f0\'e5\'a4\f1\'89\f0\'e6\f1\bullet\f0\'b0\'e5\'90\'8d\'e3\'81\'ae\'e9\'85\'8d\'e5\f1\'88\emdash\f0\'e3\'80\'81t\'e3\'81\'af\'e5\'bc\'8f
    *)
-and pp_case tvs env ((name,ids,t): ml_branch) =
+and pp_case tvs env ((ids, p,t): ml_branch) = (* TODO fix pattern translation  *)
   let (ids, env') = C.push_vars (List.rev_map MU.id_of_mlid ids) env in
-  str "case " ++ pp_global C.Cons name ++ str "(" ++
+  str "case " ++ str "TODO_fix_pattern_translation" ++ str "(" ++
     prlist_with_comma pr_id (List.rev ids)
     ++ str ")" ++ str " => "
     ++ pp_expr tvs env' t
 
-and local_def tvs env (id: N.identifier) (def: ml_ast) =
+and local_def tvs env (id: Id.t) (def: ml_ast) =
   str "def " ++ pr_id id ++ str " = " ++ pp_expr tvs env def
 
-and local_def' tvs env (id: N.identifier) i (ty: ml_type) (def: ml_ast) =
+and local_def' tvs env (id: Id.t) i (ty: ml_type) (def: ml_ast) =
   let new_tvars =
     let n = List.length tvs in
     if i=0 then []
     else (n+1)--(n+i)
-    |> List.map (N.id_of_string $ name_of_tvar)
+    |> List.map (Id.of_string $ name_of_tvar)
   in
   let tvs' = List.rev new_tvars @ tvs in
   let pp_tvars = if new_tvars = [] then mt() else
@@ -190,7 +190,7 @@ let pp_def glob body typ =
   let tvars = if ftvs = [] then mt() else
     str "[" ++ prlist_with_comma (str $ name_of_tvar') ftvs ++ str "]"
   in
-  let tvs = List.map (fun i -> N.id_of_string (name_of_tvar' i)) ftvs in
+  let tvs = List.map (fun i -> Id.of_string (name_of_tvar' i)) ftvs in
   let pbody =
     if T.is_custom glob then str (T.find_custom glob)
     else pp_expr [] (C.empty_env()) body
@@ -204,12 +204,12 @@ let pp_singleton kn packet =
   let params = if l = [] then mt ()
       else str "[" ++ prlist_with_comma pr_id l ++ str "]"
   in
-  str "type " ++ pp_global C.Type (L.IndRef (kn, 0)) ++ params
+  str "type " ++ pp_global C.Type (GlobRef.IndRef (kn, 0)) ++ params
     ++ str " = " ++ pp_type l' (List.hd packet.ip_types.(0)) ++ fnl()
 
-let pp_one_ind (ip: N.inductive) (tvars: N.identifier list)
+let pp_one_ind (ip: inductive) (tvars: Id.t list)
     (cv: ml_type list array) =
-  let tname = pp_global C.Type (L.IndRef ip) in
+  let tname = pp_global C.Type (GlobRef.IndRef ip) in
   let pp_tvars vs =
     if vs = [] then mt()
     else str "[" ++ prlist_with_comma pr_id vs ++ str "]"
@@ -225,14 +225,14 @@ let pp_one_ind (ip: N.inductive) (tvars: N.identifier list)
   in
   str "sealed abstract class " ++ tname ++ pp_tvars tvars ++ fnl()
     ++ prvect_with_sep Pp.fnl pp_constructor
-      (Array.mapi (fun j typ -> (L.ConstructRef(ip,j+1), typ)) cv)
+      (Array.mapi (fun j typ -> (GlobRef.ConstructRef(ip,j+1), typ)) cv)
 
 
-let pp_decl : ml_decl -> std_ppcmds = function
+let pp_decl = function
   | Dind (kn,i) when i.ind_kind = Singleton ->
-      pp_singleton (N.mind_of_kn kn) i.ind_packets.(0) ++ fnl ()
-  | Dind ((kn: N.kernel_name), (ind: ml_ind)) ->
-      let mind = N.mind_of_kn kn in
+      pp_singleton kn i.ind_packets.(0) ++ fnl ()
+  | Dind (kn, ind) ->
+      let mind = kn in
       let rec iter i =
  if i >= Array.length ind.ind_packets then mt()
  else
@@ -242,7 +242,7 @@ let pp_decl : ml_decl -> std_ppcmds = function
      ++ iter (i+1)
       in
       iter 0
-  | Dtype ((r:L.global_reference), (l: N.identifier list), (t: ml_type)) ->
+  | Dtype (r, l, t) ->
       if T.is_inline_custom r then mt()
       else
         let name = pp_global C.Type r in
@@ -255,7 +255,7 @@ let pp_decl : ml_decl -> std_ppcmds = function
             else str "[" ++ prlist_with_comma id ty_args ++ str "]"
         in
         str "type " ++ name ++ tparams ++ str " = " ++ def ++ Pp.fnl()
-  | Dfix ((rv: L.global_reference array), (defs: ml_ast array), (typs: ml_type array)) ->
+  | Dfix (rv, defs, typs) ->
       let max = Array.length rv in
       let rec iter i =
  if i = max then mt ()
@@ -263,7 +263,7 @@ let pp_decl : ml_decl -> std_ppcmds = function
    pp_def rv.(i) defs.(i) typs.(i) ++ iter (i+1)
       in
       iter 0
-  | Dterm ((r: L.global_reference), (a: ml_ast), (t: ml_type)) ->
+  | Dterm (r, a, t) ->
       if T.is_inline_custom r then mt ()
       else pp_def r a t
 
@@ -290,14 +290,14 @@ let pp_struct (sts: ml_structure) =
     ++ prlist_strict pp_sel sts
     ++ str "}" ++ Pp.fnl()
 
-
-let descr = {
+let scala_descr = {
   keywords = keywords;
   file_suffix = ".scala";
+  file_naming = T.file_of_modfile;
   preamble = preamble;
   pp_struct = pp_struct;
   sig_suffix = None;
-  sig_preamble = (fun _ _ _ -> mt ());
+  sig_preamble = (fun _ _ _ _ -> mt ());
   pp_sig = (fun _ -> mt ());
   pp_decl = pp_decl;
 }

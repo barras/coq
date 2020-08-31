@@ -101,9 +101,7 @@ let unquote s =
         match lang () with
     | Ocaml | Haskell -> s
         | Scheme -> String.map (fun c -> if c == '\'' then '~' else c) s
-        | Scala ->
-                let ss = List.map (function | "\'" -> "$prime" | c -> c) (explode s) in
-                String.concat "" ss
+        | Scala -> Str.(global_replace (regexp "'") "$prime" s)
 
 let rec qualify delim = function
   | [] -> assert false
