@@ -161,11 +161,20 @@ let rec pp_expr (tvs: Id.t list) (env: C.env) : ml_ast -> 'a =
     \'e5\~\'b4\'e5\'90\f1\'88\f0\'e5\f1\'88\'86\f0\'e3\'81\lquote\'e3\'81\'ae\'e4\'b8\'80\'e3\'81\'a4\'e3\'81\'aecase\'e3\'81\'ab\'e3\'81\'a4\'e3\'81\f1\'84\f0\'e3\'81\'a6
     name\'e3\'81\'af\'e3\'82\'b3\'e3\f2\u402?\f0\'b3\'e3\'82\'b9\'e3\f2\u402?\f1\'88\f0\'e3\f2\u402?\f0\'a9\'e3\'82\'af\'e3\'82\'bf\'e5\'90\'8d\'e3\'80\'81ids\'e3\'81\'af\'e6\'9d\f2\u376?\f0\'e7\'b8\f1\'9b\f0\'e3\'81\f1\bullet\f0\'e3\'82\f2\u338?\f0\'e3\'82\f1\'8b\f0\'e5\'a4\f1\'89\f0\'e6\f1\bullet\f0\'b0\'e5\'90\'8d\'e3\'81\'ae\'e9\'85\'8d\'e5\f1\'88\emdash\f0\'e3\'80\'81t\'e3\'81\'af\'e5\'bc\'8f
    *)
+
+and pp_cons_pat r ppl =
+    pp_global C.Cons r ++ str "(" ++ prlist_with_comma identity ppl ++ str ")"
+
+and pp_gen_pat ids env = function
+  | Pcons (r, l) -> pp_cons_pat r (List.map (pp_gen_pat ids env) l)
+  | Pusual r -> pp_cons_pat r (List.map Id.print ids)
+  | Ptuple l -> str "(" ++ prlist_with_comma (pp_gen_pat ids env) l ++ str ")"
+  | Pwild -> str "_"
+  | Prel n -> Id.print (C.get_db_name n env)
+
 and pp_case tvs env ((ids, p,t): ml_branch) = (* TODO fix pattern translation  *)
-  let (ids, env') = C.push_vars (List.rev_map MU.id_of_mlid ids) env in
-  str "case " ++ str "TODO_fix_pattern_translation" ++ str "(" ++
-    prlist_with_comma pr_id (List.rev ids)
-    ++ str ")" ++ str " => "
+  let ids, env' = C.push_vars (List.rev_map MU.id_of_mlid ids) env in
+  str "case " ++ (pp_gen_pat (List.rev ids) env' p) ++ str " => "
     ++ pp_expr tvs env' t
 
 and local_def tvs env (id: Id.t) (def: ml_ast) =
