@@ -99,7 +99,7 @@ let rec pp_type (tvs:Id.t list) = function
     | Tunknown -> str "Any"
     | Taxiom -> str "Unit // AXIOM TO BE REALIZED" ++ Pp.fnl()
 
-let rec pp_expr (tvs: Id.t list) (env: C.env) : ml_ast -> 'a =
+let rec pp_expr (tvs: Id.t list) (env: C.env)  : ml_ast -> 'a =
   function
     | MLrel (i, ts) ->
  let id = C.get_db_name i env in
@@ -118,15 +118,15 @@ let rec pp_expr (tvs: Id.t list) (env: C.env) : ml_ast -> 'a =
         let pp_arg (id,ty) = str "(" ++ pr_id id ++ str ":"
             ++ pp_type tvs ty ++ str ") =>"
         in
- str"{" ++ Pp.fnl()
-          ++ prlist_with_space pp_arg (List.rev fl') ++ Pp.fnl()
+          prlist_with_space pp_arg (List.rev fl') ++ Pp.fnl()
+          ++ str"{" ++ Pp.fnl()
           ++ pp_expr tvs env' a' ++ Pp.fnl()
           ++ str "}"
     | MLletin ((mlid: ml_ident), (i,mlty), (a1: ml_ast), (a2: ml_ast)) ->
  let id = MU.id_of_mlid mlid in
  let (ids', env2) = C.push_vars [id] env in
  str "{" ++ Pp.fnl()
-          ++ local_def' tvs env (List.hd ids') i mlty a1 ++ Pp.fnl()
+          ++ local_def' tvs env (List.hd ids') i mlty a1 ++ str ";" ++ Pp.fnl()
    ++ pp_expr tvs env2 a2 ++ Pp.fnl() ++ str "}" ++ Pp.fnl()
     | MLglob (r, ty_args) ->
         let type_annot = if ty_args = [] then mt()
