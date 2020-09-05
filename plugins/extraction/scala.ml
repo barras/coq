@@ -281,9 +281,11 @@ let rec pp_structure_elem = function
   | (l,SEmodule m) -> pp_module_expr m.ml_mod_expr
   | (l,SEmodtype m) -> mt ()
 and pp_module_expr = function
-  | MEstruct (mp,sel) -> str "object CoqModule {" ++ Pp.fnl()
- ++ prlist_strict pp_structure_elem sel
- ++ str "}" ++ Pp.fnl()
+  | MEstruct (mp,sel) -> (*
+  TODO find a better translation for Coq Modules
+str "object CoqModule {" ++ Pp.fnl()
+ ++*) prlist_strict pp_structure_elem sel
+ (*++ str "}" ++ Pp.fnl()*)
   | MEfunctor _ -> mt ()
   | MEident _ | MEapply _ -> assert false
 
