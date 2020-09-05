@@ -167,10 +167,10 @@ and pp_cons_pat r ppl =
 
 and pp_gen_pat ids env = function
   | Pcons (r, l) -> pp_cons_pat r (List.map (pp_gen_pat ids env) l)
-  | Pusual r -> pp_cons_pat r (List.map Id.print ids)
+  | Pusual r -> pp_cons_pat r (List.map pr_id ids)
   | Ptuple l -> str "(" ++ prlist_with_comma (pp_gen_pat ids env) l ++ str ")"
   | Pwild -> str "_"
-  | Prel n -> Id.print (C.get_db_name n env)
+  | Prel n -> pr_id (C.get_db_name n env)
 
 and pp_case tvs env ((ids, p,t): ml_branch) = (* TODO fix pattern translation  *)
   let ids, env' = C.push_vars (List.rev_map MU.id_of_mlid ids) env in
