@@ -4,6 +4,16 @@ module No = Nameops (* library/nameops.ml *)
 module L = Libnames (* library/libnames.ml *)
 open Names (* kernel/names.ml *)
 
+(*
+
+TODO Unit testing
+Implement a similar unit test for Scala extraction https://github.com/coq/coq/blob/master/test-suite/success/extraction.v
+Modify the compile function to provide Scala support for the Extract TestCompile command
+See in https://github.com/coq/coq/blob/master/plugins/extraction/extract_env.ml#L700
+
+*)
+
+
 
 module T = Table
 open Miniml
