@@ -511,21 +511,24 @@ let init_ocaml_path ~coqlib =
   let add_subdir dl = Mltop.add_ml_dir (Filename.concat coqlib dl) in
   List.iter add_subdir ("dev" :: Coq_config.all_src_dirs)
 
+let drop_first_cycle = ref true
 let loop ~opts ~state =
   drop_args := Some opts;
   let open Coqargs in
   print_emacs := opts.config.print_emacs;
   (* We initialize the console only if we run the toploop_run *)
-  let tl_feed = Feedback.add_feeder coqloop_feed in
+  if !drop_first_cycle then begin
+      let tl_feed = Feedback.add_feeder coqloop_feed in ()
+    end;
   (* Initialize buffer *)
   Sys.catch_break true;
   reset_input_buffer state.Vernac.State.doc stdin top_buffer;
   (* Call the main loop *)
   let _ : Vernac.State.t = vernac_loop ~state in
-  (* Initialise and launch the Ocaml toplevel *)
-  let coqlib = Envars.coqlib () in
-  init_ocaml_path ~coqlib;
-  Mltop.ocaml_toploop();
-  (* We delete the feeder after the OCaml toploop has ended so users
-     of Drop can see the feedback. *)
-  Feedback.del_feeder tl_feed
+  (* Initialize and launch the Ocaml toplevel *)
+  if !drop_first_cycle then begin
+      drop_first_cycle := false;
+      let coqlib = Envars.coqlib () in
+      init_ocaml_path ~coqlib;
+      Mltop.ocaml_toploop()
+    end
