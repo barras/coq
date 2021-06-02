@@ -632,11 +632,17 @@ Extraction Language Scheme.
 (* Extraction "test_extraction.scm" Everything. *)
 Recursive Extraction Everything.
 
+Extraction Language Scala.
+Recursive Extraction Everything.
 
 (*** Finally, a test more focused on everyday's life situations ***)
 
 Require Import ZArith.
 
 Extraction Language OCaml.
+Recursive Extraction Z_modulo_2 Zdiv_eucl_exist.
+Extraction TestCompile Z_modulo_2 Zdiv_eucl_exist.
+
+Extraction Language Scala.
 Recursive Extraction Z_modulo_2 Zdiv_eucl_exist.
 Extraction TestCompile Z_modulo_2 Zdiv_eucl_exist.

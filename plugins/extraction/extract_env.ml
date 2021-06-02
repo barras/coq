@@ -699,8 +699,11 @@ let structure_for_compute env sg c =
 
 let compile f =
   try
-    let args = ["ocamlc";"-I";Filename.dirname f;"-c";f^"i";f] in
-    let res = CUnix.sys_command (Envars.ocamlfind ()) args in
+    let (exe, args) = match lang () with
+        | Ocaml -> (Envars.ocamlfind (), ["ocamlc";"-I";Filename.dirname f;"-c";f^"i";f])
+        | Scala -> ("scalac", [f])
+        | _ -> assert false in
+    let res = CUnix.sys_command exe args in
     match res with
     | Unix.WEXITED 0 -> ()
     | Unix.WEXITED n | Unix.WSIGNALED n | Unix.WSTOPPED n ->
@@ -712,18 +715,24 @@ let compile f =
       Pp.(str "Compilation of file " ++ str f ++
           str " failed with error " ++ str (Unix.error_message e))
 
+
 let remove f =
   if Sys.file_exists f then Sys.remove f
 
 let extract_and_compile l =
-  if lang () != Ocaml then
-    CErrors.user_err (Pp.str "This command only works with OCaml extraction");
-  let f = Filename.temp_file "testextraction" ".ml" in
+
+  let (f, files) = match lang () with
+        | Ocaml -> let f = Filename.temp_file "testextraction" ".ml" in
+                   let base = Filename.chop_suffix f ".ml" in
+                           (f, [base^".cmo"; base^".cmi"; base^".mli"])
+        | Scala -> let f = Filename.temp_file "testextraction" ".scala" in
+                    (f, ["CoqMain*.class"])
+        | _ -> CErrors.user_err (Pp.str "This command only works with OCaml and Scala extractions") in
+
   let () = full_extraction (Some f) l in
   let () = compile f in
-  let () = remove f; remove (f^"i") in
-  let base = Filename.chop_suffix f ".ml" in
-  let () = remove (base^".cmo"); remove (base^".cmi") in
+  remove f;
+  List.iter remove files;
   Feedback.msg_notice (str "Extracted code successfully compiled")
 
 (* Show the extraction of the current ongoing proof *)
