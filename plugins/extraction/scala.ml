@@ -51,8 +51,8 @@ let keywords =
 let preamble mod_name used_modules usf _ = str ""
 
 let prarray_with_sep pp f xs = prlist_with_sep pp f (Array.to_list xs)
-let prlist_with_comma f xs = prlist_with_sep (fun () -> str ", ") f xs
-let prlist_with_space f xs = prlist_with_sep (fun () -> str " ") f xs
+let prlist_with_comma f xs = hov 0 (prlist_with_sep (fun () -> str "," ++ spc()) f xs)
+let prlist_with_space f xs = hov 0 (prlist_with_sep (fun () -> spc()) f xs)
 
 let is_infix r =
   if T.is_inline_custom r then
@@ -110,11 +110,11 @@ let rec pp_type (tvs:Id.t list) = function
  let s = T.find_custom r in
   hov 2 (str "(" ++ pp_type tvs (List.hd l) ++ spc() ++ str (String.sub s 1 (String.length s - 2)) ++    str " " ++ pp_type tvs (List.nth l 1) ++ str ")")
 else
- pp_global C.Type r
+ hov 2 (pp_global C.Type r
    ++ if l = [] then mt ()
-      else str "[" ++ prlist_with_comma (pp_type tvs) l ++ str "]"
+      else str "[" ++ prlist_with_comma (pp_type tvs) l ++ str "]")
     | Tarr (t1,t2) ->
- str "(" ++ pp_type tvs t1 ++ str " => " ++ pp_type tvs t2 ++ str")"
+ hov 0 (str "(" ++ pp_type tvs t1 ++ str " =>" ++ spc() ++ pp_type tvs t2 ++ str")")
     | Tdummy _ -> str "Unit"
     | Tunknown -> str "Any"
     | Taxiom -> str "Unit // AXIOM TO BE REALIZED" ++ Pp.fnl()
@@ -144,9 +144,9 @@ let rec pp_expr (tvs: Id.t list) (env: C.env)  : ml_ast -> 'a =
        let pp_arg (id,ty) = str "(" ++ pr_id id ++ str ":"
                             ++ pp_type tvs ty ++ str ") =>"
        in
-       prlist_with_space pp_arg (List.rev fl') ++ Pp.fnl()
-       ++ str"{" ++ Pp.fnl()
-       ++ pp_expr tvs env' a' ++ Pp.fnl()
+       hov 2 (prlist_with_space pp_arg (List.rev fl')
+       ++ str" {" ++ Pp.fnl()
+       ++ pp_expr tvs env' a') ++ Pp.fnl()
        ++ str "}"
     |MLletin ((mlid: ml_ident), (i,mlty), (a1: ml_ast), (a2: ml_ast)) ->
       let id = MU.id_of_mlid mlid in
@@ -169,12 +169,12 @@ let rec pp_expr (tvs: Id.t list) (env: C.env)  : ml_ast -> 'a =
        else if T.is_inline_custom r && args = [] then
          pp_global C.Cons r
        else
-         pp_global C.Cons r ++ str "("
-         ++ prlist_with_comma (pp_expr tvs env) args ++ str ")"
+         hov 0 (pp_global C.Cons r ++ str "("
+         ++ prlist_with_comma (pp_expr tvs env) args ++str ")")
     | MLcase (_, t, pv)  ->
-       pp_expr tvs env t ++ str " match {" ++ Pp.fnl()
+       hv 2 ( pp_expr tvs env t ++ str " match {" ++ Pp.fnl()
        ++ prarray_with_sep Pp.fnl (pp_case tvs env) pv
-       ++ Pp.fnl() ++ str "}"
+       ++ Pp.fnl() ++ str "}" )
     | MLfix ((i: int), idtys ,(defs: ml_ast array)) ->
        let ids,tys = Array.to_list idtys |> List.split in
        let ids',env' = C.push_vars (List.rev ids) env in
@@ -212,8 +212,8 @@ and pp_gen_pat ids env = function
 
 and pp_case tvs env ((ids, p,t): ml_branch) = (* TODO fix pattern translation  *)
   let ids, env' = C.push_vars (List.rev_map MU.id_of_mlid ids) env in
-  str "case " ++ (pp_gen_pat (List.rev ids) env' p) ++ str " => "
-  ++ pp_expr tvs env' t
+  hov 2 ( str "case " ++ (pp_gen_pat (List.rev ids) env' p) ++ str " =>" ++ spc() ++
+hov 0 (pp_expr tvs env' t ))
 
 and local_def tvs env (id: Id.t) (def: ml_ast) =
   str "def " ++ pr_id id ++ str " = " ++ pp_expr tvs env def
@@ -244,8 +244,8 @@ let pp_def glob body typ =
     if T.is_custom glob then str (T.find_custom glob)
     else pp_expr [] (C.empty_env()) body
   in
-  str "def " ++ pp_global C.Term glob ++ tvars ++ str " : " ++ pp_type tvs typ
-  ++ str " = " ++ pbody ++ Pp.fnl()
+  hov 2 (str "def " ++ pp_global C.Term glob ++ tvars ++ str " :" ++ brk(1, 2) ++ pp_type tvs typ
+  ++ str " = " ++ spc() ++ pbody) ++ Pp.fnl()
 
 let pp_singleton kn packet =
   let l = packet.ip_vars in
@@ -265,13 +265,13 @@ let pp_one_ind (ip: inductive) (tvars: Id.t list)
     else str "[" ++ prlist_with_comma pr_id vs ++ str "]"
   in
   let pp_constructor (r,typs) =
-    str "case class " ++ pp_global C.Cons r ++ pp_tvars tvars ++ str "("
+    hov 0 (str "case class " ++ pp_global C.Cons r ++ pp_tvars tvars ++ str "("
     ++ prlist_with_comma
          (fun (i, typ) ->
            let vname = str "x" ++ int i in
            vname ++ str ": " ++ pp_type tvars typ)
          (list_mapi (fun i typ -> (i+1,typ)) typs)
-    ++ str ") extends " ++ tname ++ pp_tvars tvars
+    ++ str ")" ++ spc() ++ str "extends " ++ hov 1 (tname ++ pp_tvars tvars))
   in
   str "sealed abstract class " ++ tname ++ pp_tvars tvars ++ fnl()
   ++ prvect_with_sep Pp.fnl pp_constructor
@@ -339,9 +339,9 @@ let pp_struct (sts: ml_structure) =
     in
     C.pop_visible (); p
   in
-  str "object CoqMain {" ++ Pp.fnl()
-  ++ prlist_strict pp_sel sts
-    ++ str "}" ++ Pp.fnl()
+  hv 0( str "object Main {" ++ Pp.fnl() ++ Pp.fnl()
+  ++ str " " ++ hv 0 ( prlist_strict pp_sel sts) ++ Pp.fnl()
+    ++ str "}" ++ Pp.fnl() )
 
 let scala_descr = {
   keywords = keywords;
