@@ -845,7 +845,7 @@ and extract_cons_app env sg mle mlt (((kn,i) as ip,j) as cp) args =
   if la < params_nb then
     let head' = head (eta_args_sign ls s) in
     put_magic magic2
-      (dummy_lams (anonym_or_dummy_lams head' s) (params_nb - la))
+      (dummy_lams_with_types (anonym_or_dummy_lams_with_types head' s types) (params_nb - la))
   else
     let mla = make_mlargs env sg mle s args' metas in
     if Int.equal la (ls + params_nb)
@@ -853,8 +853,9 @@ and extract_cons_app env sg mle mlt (((kn,i) as ip,j) as cp) args =
     else (* [ params_nb <= la <= ls + params_nb ] *)
       let ls' = params_nb + ls - la in
       let s' = List.lastn ls' s in
+      let t' = List.lastn ls' types in
       let mla = (List.map (ast_lift ls') mla) @ (eta_args_sign ls' s') in
-      put_magic magic2 (anonym_or_dummy_lams (head mla) s')
+      put_magic magic2 (anonym_or_dummy_lams_with_types (head mla) s' t')
 
 (*S Extraction of a case. *)
 

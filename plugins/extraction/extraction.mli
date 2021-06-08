@@ -39,3 +39,7 @@ val extract_constr : env -> evar_map -> EConstr.t -> ml_ast * ml_type
 
 val logical_decl : ml_decl -> bool
 val logical_spec : ml_spec -> bool
+
+val extract_term : env -> evar_map -> Mlutil.Mlenv.t -> ml_type -> EConstr.t -> EConstr.constr list -> ml_ast
+
+val extract_ind : env -> Names.MutInd.t -> Miniml.ml_ind

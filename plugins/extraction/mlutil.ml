@@ -783,12 +783,26 @@ let rec many_lams id a = function
 let anonym_tmp_lams a n = many_lams (Tmp anonymous_name) a n
 let dummy_lams a n = many_lams Dummy a n
 
+let dummy_lams_with_types a lt =
+match lt with
+  | [] -> a
+  | ty::tys -> MLlam(anonymous, ty, anonym_or_dummy_lams_with_types a tys)
+
+
 (*s mixed according to a signature. *)
 
 let rec anonym_or_dummy_lams a = function
   | [] -> a
   | Keep :: s -> MLlam(anonymous, tydummy, anonym_or_dummy_lams a s)
   | Kill _ :: s -> MLlam(Dummy, tydummy, anonym_or_dummy_lams a s)
+
+
+let rec anonym_or_dummy_lams_with_types a ls lt =
+match ls, lt with
+  | [], [] -> a
+  | Keep :: s, ty::tys -> MLlam(anonymous, ty, anonym_or_dummy_lams_with_types a s tys)
+  | Kill _ :: s, ty::tys -> MLlam(Dummy, ty, anonym_or_dummy_lams_with_types a s tys)
+  | _ -> assert false
 
 (*S Operations concerning eta. *)
 
