@@ -142,7 +142,7 @@ let needs_magic p =
 
 let put_magic magic a =
         match magic with
-        | NeedsMagic(ty1,ty2) -> MLmagic(a, ty1)
+        | NeedsMagic(ty1,ty2) -> MLmagic(a, ty2)
         | NoMagic -> a
 
 let put_magic_if b opt a =
@@ -783,10 +783,10 @@ let rec many_lams id a = function
 let anonym_tmp_lams a n = many_lams (Tmp anonymous_name) a n
 let dummy_lams a n = many_lams Dummy a n
 
-let dummy_lams_with_types a lt =
+let rec dummy_lams_with_types a lt =
 match lt with
   | [] -> a
-  | ty::tys -> MLlam(anonymous, ty, anonym_or_dummy_lams_with_types a tys)
+  | ty::tys -> MLlam(anonymous, ty, dummy_lams_with_types a tys)
 
 
 (*s mixed according to a signature. *)

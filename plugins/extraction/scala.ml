@@ -144,10 +144,10 @@ let rec pp_expr (tvs: Id.t list) (env: C.env)  : ml_ast -> 'a =
        let pp_arg (id,ty) = str "(" ++ pr_id id ++ str ":"
                             ++ pp_type tvs ty ++ str ") =>"
        in
-       hov 2 (prlist_with_space pp_arg (List.rev fl')
+       hov 0 (prlist_with_space pp_arg (List.rev fl')
        ++ str" {" ++ Pp.fnl()
-       ++ pp_expr tvs env' a') ++ Pp.fnl()
-       ++ str "}"
+       ++ str "  " ++ pp_expr tvs env' a' ++ Pp.fnl()
+       ++ str "}")
     |MLletin ((mlid: ml_ident), (i,mlty), (a1: ml_ast), (a2: ml_ast)) ->
       let id = MU.id_of_mlid mlid in
       let (ids', env2) = C.push_vars [id] env in
@@ -245,7 +245,7 @@ let pp_def glob body typ =
     else pp_expr [] (C.empty_env()) body
   in
   hov 2 (str "def " ++ pp_global C.Term glob ++ tvars ++ str " :" ++ brk(1, 2) ++ pp_type tvs typ
-  ++ str " = " ++ spc() ++ pbody) ++ Pp.fnl()
+  ++ str " =" ++ spc() ++ pbody) ++ Pp.fnl()
 
 let pp_singleton kn packet =
   let l = packet.ip_vars in
